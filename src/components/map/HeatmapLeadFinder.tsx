@@ -73,6 +73,44 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
     ? US_STATES 
     : US_STATES.filter(st => REGION_MAP[st.code] === selectedRegion);
 
+  const realEstateDataSources = [
+    {
+      name: 'County Tax Assessor / GIS Portals',
+      type: 'Public records',
+      coverage: 'All 50 states',
+      access: 'Free public access',
+      detail: 'Parcel data, ownership, tax history, property boundaries.'
+    },
+    {
+      name: 'County GIS Parcel Layers',
+      type: 'Public GIS data',
+      coverage: 'All 50 states',
+      access: 'Free public access',
+      detail: 'Parcel boundaries, lot lines, zoning, and local property geometry.'
+    },
+    {
+      name: 'Overture Maps Foundation',
+      type: 'Open base map data',
+      coverage: 'Global',
+      access: 'Free open data',
+      detail: 'Building footprints, address points, and geographic context data.'
+    },
+    {
+      name: 'Kaggle Real Estate Datasets',
+      type: 'Dataset downloads',
+      coverage: 'National and state sample sets',
+      access: 'Free to download',
+      detail: 'Historical listings and property specs for testing and dashboard prototypes.'
+    },
+    {
+      name: 'Realtors Property Resource (RPR)',
+      type: 'Licensed realtor access',
+      coverage: 'US national',
+      access: 'Free with REALTOR® membership',
+      detail: 'Property records, tax assessments, valuation estimates, and neighborhood data.'
+    }
+  ];
+
   // Tile Layer and Map Theme - Default: OpenStreetMap Standard (OSM)
   const [mapTheme, setMapTheme] = useState<'osm' | 'satellite' | 'dark'>('osm');
   const tileLayerInstanceRef = useRef<L.TileLayer | null>(null);
@@ -445,9 +483,9 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
                 <input
                   type="number"
                   min={1}
-                  max={25}
+                  max={500}
                   value={searchRadius}
-                  onChange={(e) => setSearchRadius(Math.max(1, Math.min(150, Number(e.target.value) || 1)))}
+                  onChange={(e) => setSearchRadius(Math.max(1, Math.min(500, Number(e.target.value) || 1)))}
                   className="w-14 px-2 py-0.5 bg-neutral-900 border border-neutral-700 rounded text-xs font-mono font-bold text-cyan-300 text-right focus:outline-none focus:border-cyan-400"
                 />
                 <span className="text-xs font-mono text-neutral-400">miles</span>
@@ -459,7 +497,7 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
               <input
                 type="range"
                 min={1}
-                max={25}
+                max={500}
                 step={1}
                 value={searchRadius}
                 onChange={(e) => setSearchRadius(Number(e.target.value))}
@@ -468,13 +506,13 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
               <div className="flex items-center justify-between text-[10px] font-mono text-neutral-500">
                 <span>1 mi</span>
                 <span className="text-cyan-400/80">Coverage: ~{Math.round(Math.PI * searchRadius * searchRadius).toLocaleString()} sq mi</span>
-                <span>25 mi</span>
+                <span>500 mi</span>
               </div>
             </div>
 
             {/* Quick Radius Presets */}
             <div className="flex items-center gap-1 pt-1 overflow-x-auto">
-              {[1, 5, 10, 15, 25].map(mi => (
+              {[1, 5, 10, 15, 25, 50, 100, 200, 300, 500].map(mi => (
                 <button
                   key={mi}
                   type="button"
@@ -514,6 +552,30 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
               <Flame className="w-3.5 h-3.5 text-cyan-400" />
               <span>Heatmap</span>
             </button>
+          </div>
+        </div>
+
+        <div className="p-4 border-b border-neutral-800 bg-neutral-950/60">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.6)]" />
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-neutral-200">Free Real Estate Data Sources</div>
+          </div>
+
+          <div className="space-y-2">
+            {realEstateDataSources.map((source) => (
+              <div key={source.name} className="rounded-md border border-neutral-800 bg-neutral-900/70 p-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-[12px] font-semibold text-neutral-100">{source.name}</div>
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
+                    {source.access}
+                  </span>
+                </div>
+                <div className="mt-1 text-[10px] text-neutral-400">
+                  <span className="text-neutral-300">{source.type}</span> · {source.coverage}
+                </div>
+                <div className="mt-1 text-[10px] text-neutral-400 leading-relaxed">{source.detail}</div>
+              </div>
+            ))}
           </div>
         </div>
 
@@ -654,7 +716,7 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
             <input
               type="range"
               min={1}
-              max={25}
+              max={500}
               step={1}
               value={searchRadius}
               onChange={(e) => setSearchRadius(Number(e.target.value))}
@@ -663,7 +725,7 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
             <div className="flex items-center justify-between text-[10px] font-mono text-neutral-500">
               <span>1 mi</span>
               <span className="text-cyan-400/90">~{Math.round(Math.PI * searchRadius * searchRadius).toLocaleString()} sq mi</span>
-              <span>25 mi</span>
+              <span>500 mi</span>
             </div>
           </div>
 
