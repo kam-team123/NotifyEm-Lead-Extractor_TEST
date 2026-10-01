@@ -246,7 +246,7 @@ export async function queryParcelLayer(layer: ParcelLayerConfig, box: BBox, limi
       yearBuilt: fm.yearBuilt ? num(pick(a, fm.yearBuilt)) : undefined,
       lotAcres: fm.lotAcres ? num(pick(a, fm.lotAcres)) : undefined,
       sourceUrl: parcelId && fm.parcelId
-        ? `${layer.url}/query?where=${encodeURIComponent(`${fm.parcelId}='${parcelId.replace(/'/g, "''")}'`)}&outFields=*&f=html`
+        ? `${layer.url}/query?where=${encodeURIComponent(`${fm.parcelId}='${parcelId.replace(/'/g, "''")}'`)}&outFields=*&f=json`
         : layer.url,
       retrievedAt,
       fromStore: false,

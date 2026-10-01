@@ -281,6 +281,7 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
         const marker = L.marker([candidate.lat, candidate.lng], { icon: candIcon });
         marker.on('click', () => {
           setSelectedCandidate(candidate);
+          if (candidate.sourceUrl) window.open(candidate.sourceUrl, '_blank', 'noopener,noreferrer');
         });
         const ownerLine = candidate.ownerName ? `<br/>Owner: ${escapeHtml(candidate.ownerName)}` : '';
         marker.bindTooltip(`${escapeHtml(candidate.address)}${ownerLine}<br/>${escapeHtml(candidate.sourceLabel)}`, {
@@ -432,9 +433,9 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
   };
 
   return (
-    <div className="flex-1 flex flex-col xl:flex-row h-[calc(100vh-57px)] overflow-hidden bg-neutral-950">
+    <div className="flex-1 min-h-0 flex flex-col xl:flex-row overflow-hidden bg-neutral-950">
       {/* Left Control Panel / Search Configuration (SOP Section 04) */}
-      <aside className="w-full xl:w-[410px] border-r border-neutral-800 bg-neutral-900/90 flex flex-col shrink-0 overflow-y-auto z-10">
+      <aside className="w-full xl:w-[410px] max-h-[calc(100dvh-62px-50vh)] xl:max-h-none xl:h-full border-r border-neutral-800 bg-neutral-900/90 flex flex-col shrink-0 overflow-y-auto z-10">
         <div className="p-4 border-b border-neutral-800">
           <div className="flex items-center justify-between">
             <h1 className="text-base font-semibold text-white tracking-tight">Property Map</h1>
@@ -721,7 +722,20 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
       </aside>
 
       {/* Main Map Viewport */}
-      <main className="flex-1 relative min-h-[500px] h-full overflow-hidden bg-neutral-950">
+      <main className="flex-1 relative min-h-[50vh] xl:min-h-0 h-full overflow-hidden bg-neutral-950">
+        <form onSubmit={handleAddressSubmit} className="absolute top-4 left-4 z-[500] flex w-[min(360px,calc(100%-2rem))] overflow-hidden rounded-md border border-neutral-700 bg-neutral-950/95 shadow-xl backdrop-blur-md">
+          <input
+            type="search"
+            value={addressInput}
+            onChange={event => setAddressInput(event.target.value)}
+            placeholder="Search address or city"
+            aria-label="Search map by address or city"
+            className="min-w-0 flex-1 bg-transparent px-3 py-2 text-xs text-neutral-100 placeholder:text-neutral-500 focus:outline-none"
+          />
+          <button type="submit" disabled={isSearching} aria-label="Search map" title="Search map" className="flex w-10 shrink-0 items-center justify-center border-l border-neutral-800 text-cyan-300 hover:bg-neutral-800 disabled:opacity-50">
+            <Search className="h-4 w-4" />
+          </button>
+        </form>
         {/* Map Control & Legend Overlay */}
         <div className="absolute top-4 right-4 z-[500] bg-neutral-950/95 backdrop-blur-md border border-neutral-800 rounded-md p-3.5 text-xs shadow-2xl max-w-xs pointer-events-auto space-y-3">
           <div className="flex items-center justify-between border-b border-neutral-800 pb-2">

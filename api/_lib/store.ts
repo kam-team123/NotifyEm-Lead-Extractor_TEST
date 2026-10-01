@@ -30,6 +30,19 @@ interface StoredPropertyRow {
   data_sources: { slug: string | null; source_name: string | null } | null;
 }
 
+function normalizeSourceUrl(value: string | null): string {
+  if (!value) return '';
+  try {
+    const url = new URL(value);
+    if (/\/query$/i.test(url.pathname) && url.searchParams.get('f')?.toLowerCase() === 'html') {
+      url.searchParams.set('f', 'json');
+    }
+    return url.toString();
+  } catch {
+    return value;
+  }
+}
+
 /** Properties already in Supabase (from earlier searches, Overture/Kaggle imports, MLS syncs) inside a bbox. */
 export async function queryStoredRecords(sb: SupabaseClient, box: BBox, limit: number): Promise<MapRecord[]> {
   const { data, error } = await sb
@@ -64,7 +77,7 @@ export async function queryStoredRecords(sb: SupabaseClient, box: BBox, limit: n
         assessedValue: row.tax_assessed_value ? Number(row.tax_assessed_value) : undefined,
         yearBuilt: row.year_built || undefined,
         lotAcres: typeof row.metadata?.lotAcres === 'number' ? row.metadata.lotAcres : undefined,
-        sourceUrl: row.source_url || '',
+        sourceUrl: normalizeSourceUrl(row.source_url),
         retrievedAt: row.updated_at,
         fromStore: true,
         confidenceScore: row.confidence_score ? Number(row.confidence_score) : 70

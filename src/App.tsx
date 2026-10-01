@@ -208,7 +208,7 @@ export default function App() {
   const pendingReviewCount = campaigns.filter(c => c.status === 'Pending Approval').length;
 
   return (
-    <div className="min-h-screen flex flex-col bg-neutral-950 text-neutral-100 font-sans">
+    <div className="h-screen flex flex-col overflow-hidden bg-neutral-950 text-neutral-100 font-sans">
       {/* Universal Top Bar */}
       <TopBar
         activeTab={activeTab}
