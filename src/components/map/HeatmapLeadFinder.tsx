@@ -9,9 +9,17 @@ import {
   AlertTriangle, 
   Compass,
 } from 'lucide-react';
-import { RealEstateLead, PropertyListing, DatabaseCollection } from '../../types';
+import { RealEstateLead, PropertyListing, DatabaseCollection, SourceRunStatus } from '../../types';
 import { US_STATES } from '../../data/referenceData';
-import { findMappedBuildings, geocodeAddress, MappedBuilding } from '../../services/openStreetMapService';
+import { geocodeAddress, MappedBuilding, searchMapRecords } from '../../services/openStreetMapService';
+import { DataSourcesPanel } from '../data/DataSourcesPanel';
+
+const escapeHtml = (value: string) =>
+  value.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!);
+
+/** Marker colour per data source family. */
+const sourceColor = (slug: string) =>
+  slug === 'osm' ? '#3b82f6' : slug.startsWith('parcel-layer:') ? '#10b981' : slug === 'overture' ? '#8b5cf6' : '#06b6d4';
 
 interface HeatmapLeadFinderProps {
   leads: RealEstateLead[];
@@ -20,6 +28,7 @@ interface HeatmapLeadFinderProps {
   onAddLead: (lead: Partial<RealEstateLead>) => void;
   onPushToSalesforce: (lead: RealEstateLead) => void;
   onCreateCollection: (name: string, description: string, state: string) => string;
+  onOpenListings: () => void;
 }
 
 export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
@@ -28,7 +37,8 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
   collections,
   onAddLead,
   onPushToSalesforce,
-  onCreateCollection
+  onCreateCollection,
+  onOpenListings
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -56,6 +66,8 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
   const [selectedCandidate, setSelectedCandidate] = useState<MappedBuilding | null>(null);
   const [showHeatmap, setShowHeatmap] = useState(true);
   const [lastSync, setLastSync] = useState<string | null>(null);
+  const [sourceStatuses, setSourceStatuses] = useState<SourceRunStatus[]>([]);
+  const [sourcesRefreshKey, setSourcesRefreshKey] = useState(0);
 
   // Quick State Navigation
   const [selectedStateCode, setSelectedStateCode] = useState<string>('');
@@ -72,44 +84,6 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
   const displayedStates = selectedRegion === 'ALL' 
     ? US_STATES 
     : US_STATES.filter(st => REGION_MAP[st.code] === selectedRegion);
-
-  const realEstateDataSources = [
-    {
-      name: 'County Tax Assessor / GIS Portals',
-      type: 'Public records',
-      coverage: 'All 50 states',
-      access: 'Free public access',
-      detail: 'Parcel data, ownership, tax history, property boundaries.'
-    },
-    {
-      name: 'County GIS Parcel Layers',
-      type: 'Public GIS data',
-      coverage: 'All 50 states',
-      access: 'Free public access',
-      detail: 'Parcel boundaries, lot lines, zoning, and local property geometry.'
-    },
-    {
-      name: 'Overture Maps Foundation',
-      type: 'Open base map data',
-      coverage: 'Global',
-      access: 'Free open data',
-      detail: 'Building footprints, address points, and geographic context data.'
-    },
-    {
-      name: 'Kaggle Real Estate Datasets',
-      type: 'Dataset downloads',
-      coverage: 'National and state sample sets',
-      access: 'Free to download',
-      detail: 'Historical listings and property specs for testing and dashboard prototypes.'
-    },
-    {
-      name: 'Realtors Property Resource (RPR)',
-      type: 'Licensed realtor access',
-      coverage: 'US national',
-      access: 'Free with REALTOR® membership',
-      detail: 'Property records, tax assessments, valuation estimates, and neighborhood data.'
-    }
-  ];
 
   // Tile Layer and Map Theme - Default: OpenStreetMap Standard (OSM)
   const [mapTheme, setMapTheme] = useState<'osm' | 'satellite' | 'dark'>('osm');
@@ -273,15 +247,16 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
           iconAnchor: [7, 7]
         });
         L.marker([currentFocus.lat, currentFocus.lng], { icon: centerIcon })
-          .bindTooltip(`Search location: ${currentFocus.label}`, { className: 'leaflet-tooltip-dark' })
+          .bindTooltip(`Search location: ${escapeHtml(currentFocus.label)}`, { className: 'leaflet-tooltip-dark' })
           .addTo(markersLayerRef.current);
       }
 
       // Discovered candidates markers - Electric Blue
       candidates.forEach(candidate => {
+        const color = sourceColor(candidate.sourceSlug);
         const candIcon = L.divIcon({
           className: 'candidate-pin',
-          html: '<div style="background-color: #3b82f6; width: 11px; height: 11px; border-radius: 50%; border: 2px solid #020617; box-shadow: 0 0 6px rgba(59,130,246,0.6); cursor: pointer;"></div>',
+          html: `<div style="background-color: ${color}; width: 11px; height: 11px; border-radius: 50%; border: 2px solid #020617; box-shadow: 0 0 6px ${color}99; cursor: pointer;"></div>`,
           iconSize: [11, 11],
           iconAnchor: [5.5, 5.5]
         });
@@ -290,7 +265,8 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
         marker.on('click', () => {
           setSelectedCandidate(candidate);
         });
-        marker.bindTooltip(`${candidate.address}<br/>OpenStreetMap · ${candidate.confidenceScore}% address completeness`, {
+        const ownerLine = candidate.ownerName ? `<br/>Owner: ${escapeHtml(candidate.ownerName)}` : '';
+        marker.bindTooltip(`${escapeHtml(candidate.address)}${ownerLine}<br/>${escapeHtml(candidate.sourceLabel)}`, {
           className: 'leaflet-tooltip-dark'
         });
         marker.addTo(markersLayerRef.current!);
@@ -333,12 +309,18 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
     setIsSearching(true);
     setSearchError(null);
     try {
-      const results = await findMappedBuildings(lat, lng, searchRadius);
-      setCandidates(results);
+      const result = await searchMapRecords(lat, lng, searchRadius);
+      setCandidates(result.records);
+      setSourceStatuses(result.sources);
       setLastSync(new Date().toISOString());
+      if (!result.records.length && result.sources.some(s => s.status === 'error')) {
+        setSearchError('No records loaded: every live source failed or returned nothing. See source details below.');
+      }
+      setSourcesRefreshKey(k => k + 1);
     } catch (error) {
       setCandidates([]);
-      setSearchError(error instanceof Error ? error.message : 'The OpenStreetMap search failed.');
+      setSourceStatuses([]);
+      setSearchError(error instanceof Error ? error.message : 'The property search failed.');
     } finally {
       setIsSearching(false);
     }
@@ -352,8 +334,8 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
     setSelectedStateCode(stateCode);
     const summary = US_STATES.find(s => s.code === stateCode);
     if (summary) {
-      setAddressInput(`${summary.name}, USA`);
-      void handleAddressSubmitFor(summary.name);
+      // Centre on the state's largest city: a state's geographic centroid is usually empty land.
+      void handleAddressSubmitFor(`${summary.anchorCity}, ${summary.name}`);
     }
   };
 
@@ -392,7 +374,7 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
             </div>
           </div>
           <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
-            Search mapped building addresses. OSM data does not provide listing status, ownership, valuation, or lead intent.
+            Searches OpenStreetMap buildings, connected county parcel layers (owner and assessed value) and everything already saved in Supabase.
           </p>
         </div>
 
@@ -420,15 +402,34 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
                 className="flex-1 py-1.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-neutral-950 font-bold rounded text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60 shadow-[0_0_12px_rgba(6,182,212,0.3)]"
               >
                 <Search className="w-3.5 h-3.5" />
-                <span>{isSearching ? 'Searching live sources...' : 'Search OpenStreetMap'}</span>
+                <span>{isSearching ? 'Searching live sources...' : 'Search properties'}</span>
               </button>
             </div>
           </form>
 
           {searchError && (
-            <div className="text-xs text-rose-400 flex items-center gap-1.5 pt-1">
-              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+            <div className="text-xs text-rose-400 flex items-start gap-1.5 pt-1">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
               <span>{searchError}</span>
+            </div>
+          )}
+
+          {sourceStatuses.length > 0 && (
+            <div className="space-y-1 pt-1">
+              {sourceStatuses.map(st => (
+                <div key={`${st.slug}-${st.label}`} className="text-[11px] flex items-start gap-1.5">
+                  <span
+                    className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${
+                      st.status === 'ok' ? 'bg-emerald-400' : st.status === 'error' ? 'bg-rose-400' : 'bg-neutral-500'
+                    }`}
+                  />
+                  <span className="text-neutral-300">
+                    <span className="font-medium">{st.label}</span>
+                    <span className="text-neutral-500"> · {st.status === 'ok' ? `${st.count} records` : st.status}{st.ms ? ` · ${(st.ms / 1000).toFixed(1)}s` : ''}</span>
+                    {st.message && <span className="block text-neutral-500 break-words">{st.message}</span>}
+                  </span>
+                </div>
+              ))}
             </div>
           )}
 
@@ -555,35 +556,13 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
           </div>
         </div>
 
-        <div className="p-4 border-b border-neutral-800 bg-neutral-950/60">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.6)]" />
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-neutral-200">Free Real Estate Data Sources</div>
-          </div>
-
-          <div className="space-y-2">
-            {realEstateDataSources.map((source) => (
-              <div key={source.name} className="rounded-md border border-neutral-800 bg-neutral-900/70 p-2.5">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="text-[12px] font-semibold text-neutral-100">{source.name}</div>
-                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
-                    {source.access}
-                  </span>
-                </div>
-                <div className="mt-1 text-[10px] text-neutral-400">
-                  <span className="text-neutral-300">{source.type}</span> · {source.coverage}
-                </div>
-                <div className="mt-1 text-[10px] text-neutral-400 leading-relaxed">{source.detail}</div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <DataSourcesPanel refreshKey={sourcesRefreshKey} onOpenListings={onOpenListings} />
 
         {/* Discovered Candidates List (Section 04 Step 9) */}
         <div className="flex-1 p-4 overflow-y-auto">
           <div className="flex items-center justify-between mb-2">
             <div className="text-xs font-semibold text-neutral-300 uppercase tracking-wider">
-              Mapped Buildings ({candidates.length})
+              Properties found ({candidates.length})
             </div>
             <div className="text-[11px] text-neutral-500">
               {lastSync ? `Updated ${new Date(lastSync).toLocaleString()}` : 'No search run'}
@@ -609,27 +588,41 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
                         {candidate.address}
                       </div>
                       <div className="text-[11px] text-neutral-400 mt-0.5">
-                        {[candidate.city, candidate.state].filter(Boolean).join(', ') || 'Location details not supplied by OSM'}
+                        {[candidate.city, candidate.state, candidate.postalCode].filter(Boolean).join(', ') || 'City/state not supplied by source'}
                       </div>
+                      {candidate.ownerName && (
+                        <div className="text-[11px] text-neutral-300 mt-0.5">Owner: {candidate.ownerName}</div>
+                      )}
                     </div>
                   </div>
 
                   {/* Clean unboxed metadata per Frontend Constitution */}
                   <div className="flex items-center gap-2 text-[11px] text-neutral-400 mt-2">
-                    <span className="text-cyan-300/90 font-medium">{candidate.category}</span>
+                    <span className="text-cyan-300/90 font-medium truncate max-w-[110px]">{candidate.category}</span>
                     <span aria-hidden="true">·</span>
-                    <span className="text-blue-300">{candidate.source}</span>
-                    <span aria-hidden="true">·</span>
-                    <span className="text-neutral-400">{candidate.confidenceScore}% address completeness</span>
+                    <span style={{ color: sourceColor(candidate.sourceSlug) }} className="truncate">{candidate.sourceLabel}</span>
+                    {candidate.assessedValue !== undefined && (
+                      <>
+                        <span aria-hidden="true">·</span>
+                        <span className="text-neutral-300 font-mono">${Math.round(candidate.assessedValue).toLocaleString()}</span>
+                      </>
+                    )}
                   </div>
 
                   {isSelected && (
                     <div className="mt-3 pt-2.5 border-t border-neutral-700/60 space-y-1 text-[11px] text-neutral-400">
-                      <div>Verification: {candidate.verificationStatus}</div>
-                      <div>Collected: {new Date(candidate.retrievedAt).toLocaleString()}</div>
-                      <a href={candidate.sourceUrl} target="_blank" rel="noreferrer" className="text-cyan-300 hover:underline">
-                        View OpenStreetMap source record
-                      </a>
+                      {candidate.parcelId && <div>Parcel ID: <span className="font-mono">{candidate.parcelId}</span></div>}
+                      {candidate.yearBuilt && <div>Year built: {candidate.yearBuilt}</div>}
+                      {candidate.lotAcres && <div>Lot: {candidate.lotAcres.toFixed(2)} acres</div>}
+                      <div>Address completeness: {candidate.confidenceScore}%</div>
+                      <div>
+                        {candidate.fromStore ? 'Saved in Supabase' : 'Fetched live'} · {new Date(candidate.retrievedAt).toLocaleString()}
+                      </div>
+                      {candidate.sourceUrl && (
+                        <a href={candidate.sourceUrl} target="_blank" rel="noreferrer" className="text-cyan-300 hover:underline">
+                          View source record
+                        </a>
+                      )}
                     </div>
                   )}
                 </div>
@@ -638,7 +631,7 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
 
             {candidates.length === 0 && !isSearching && (
               <div className="text-center py-8 text-neutral-500 text-xs">
-                {searchError ? 'No records loaded because the source request failed.' : hasSearchLocation ? 'No address-tagged buildings were returned for this search.' : 'Search a location to load real mapped building records.'}
+                {searchError ? 'No records loaded because the source requests failed.' : hasSearchLocation ? 'No property records were returned for this search. Try a city address or connect a county parcel layer.' : 'Search a location to load property records.'}
               </div>
             )}
           </div>
@@ -735,10 +728,17 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
               <span className="w-3 h-3 rounded-full bg-cyan-400 border border-neutral-950 shadow-[0_0_6px_#06b6d4] shrink-0" />
               <span>{hasSearchLocation ? currentFocus.label : 'No location selected'}</span>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shadow-[0_0_6px_#3b82f6] shrink-0" />
-              <span>OSM-mapped buildings ({candidates.length})</span>
-            </div>
+            {[
+              { label: 'OpenStreetMap', color: sourceColor('osm'), match: (slug: string) => slug === 'osm' },
+              { label: 'County parcels', color: sourceColor('parcel-layer:'), match: (slug: string) => slug.startsWith('parcel-layer:') },
+              { label: 'Overture', color: sourceColor('overture'), match: (slug: string) => slug === 'overture' },
+              { label: 'MLS / Kaggle / other', color: sourceColor('other'), match: (slug: string) => !['osm', 'overture'].includes(slug) && !slug.startsWith('parcel-layer:') }
+            ].map(item => (
+              <div key={item.label} className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: item.color, boxShadow: `0 0 6px ${item.color}` }} />
+                <span>{item.label} ({candidates.filter(c => item.match(c.sourceSlug)).length})</span>
+              </div>
+            ))}
           </div>
         </div>
 

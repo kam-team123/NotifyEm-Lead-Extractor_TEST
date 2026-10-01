@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { TopBar } from './components/layout/TopBar';
 import { HeatmapLeadFinder } from './components/map/HeatmapLeadFinder';
 import { DailyListingsFeed } from './components/daily/DailyListingsFeed';
@@ -26,6 +26,7 @@ import {
   INITIAL_SYNC_LOGS,
   INITIAL_CAMPAIGNS
 } from './data/referenceData';
+import { apiGet, apiSend, newId } from './services/apiClient';
 
 
 export default function App() {
@@ -33,7 +34,7 @@ export default function App() {
 
   // Application Data State
   const [leads, setLeads] = useState<RealEstateLead[]>(INITIAL_LEADS);
-  const [properties] = useState<PropertyListing[]>(INITIAL_PROPERTY_LISTINGS);
+  const [properties, setProperties] = useState<PropertyListing[]>(INITIAL_PROPERTY_LISTINGS);
   const [collections, setCollections] = useState<DatabaseCollection[]>(INITIAL_COLLECTIONS);
   const [salesforceConfig, setSalesforceConfig] = useState<SalesforceConfig>(INITIAL_SALESFORCE_CONFIG);
   const [syncLogs, setSyncLogs] = useState<SalesforceSyncLog[]>(INITIAL_SYNC_LOGS);
@@ -42,11 +43,47 @@ export default function App() {
   // Status and feedback
   const [isSyncing, setIsSyncing] = useState(false);
   const [bannerNotice, setBannerNotice] = useState<string | null>(null);
+  // null = still checking; string = why leads/collections are not being saved to Supabase.
+  const [persistenceError, setPersistenceError] = useState<string | null>(null);
 
   // Quick Notification Banner helper
-  const showBanner = (msg: string) => {
+  const showBanner = (msg: string, ms = 4000) => {
     setBannerNotice(msg);
-    setTimeout(() => setBannerNotice(null), 4000);
+    setTimeout(() => setBannerNotice(null), ms);
+  };
+
+  const reloadListings = async () => {
+    try {
+      const res = await apiGet<{ listings: PropertyListing[] }>('/api/listings?limit=200');
+      setProperties(res.listings.filter(l => !l.isTestData));
+    } catch {
+      // Listings tab shows its own error; other tabs simply have no listings to pick from.
+    }
+  };
+
+  // Load saved data from Supabase (through /api) on start.
+  useEffect(() => {
+    void (async () => {
+      const [leadRes, collectionRes] = await Promise.allSettled([
+        apiGet<{ leads: RealEstateLead[] }>('/api/leads'),
+        apiGet<{ collections: DatabaseCollection[] }>('/api/collections')
+      ]);
+      if (leadRes.status === 'fulfilled') setLeads(leadRes.value.leads);
+      if (collectionRes.status === 'fulfilled') setCollections(collectionRes.value.collections);
+      const failure = [leadRes, collectionRes].find(r => r.status === 'rejected') as PromiseRejectedResult | undefined;
+      if (failure) {
+        const reason = failure.reason instanceof Error ? failure.reason.message : String(failure.reason);
+        setPersistenceError(reason);
+        showBanner(`Leads and collections are not being saved: ${reason}`, 9000);
+      }
+    })();
+    void reloadListings();
+  }, []);
+
+  const persist = (label: string, request: Promise<unknown>) => {
+    request.catch(error => {
+      showBanner(`${label} was not saved to Supabase: ${error instanceof Error ? error.message : error}`, 8000);
+    });
   };
 
   // Quick Salesforce Sync (from TopBar or Overview)
@@ -95,7 +132,7 @@ export default function App() {
 
     const collectedAt = new Date().toISOString();
     const newLead: RealEstateLead = {
-      id: `lead_${Date.now()}`,
+      id: newId(),
       firstName: leadData.firstName,
       lastName: leadData.lastName,
       email: leadData.email || '',
@@ -124,18 +161,20 @@ export default function App() {
     };
 
     setLeads(prev => [newLead, ...prev]);
+    if (!persistenceError) persist('Lead', apiSend('POST', '/api/leads', newLead));
     showBanner(`Added new real estate lead: ${newLead.firstName} ${newLead.lastName} (${newLead.category})`);
   };
 
   // Update Lead Pipeline State
   const handleUpdateLeadState = (leadId: string, newState: PipelineState) => {
     setLeads(prev => prev.map(l => l.id === leadId ? { ...l, pipelineState: newState } : l));
+    if (!persistenceError) persist('Pipeline change', apiSend('PATCH', `/api/leads?id=${encodeURIComponent(leadId)}`, { pipelineState: newState }));
   };
 
   // Create Database Collection
   const handleCreateCollection = (name: string, description: string, state: string): string => {
     const newCol: DatabaseCollection = {
-      id: `col_${Date.now()}`,
+      id: newId(),
       name,
       description,
       leadCount: 0,
@@ -145,6 +184,7 @@ export default function App() {
       updatedAt: new Date().toISOString()
     };
     setCollections(prev => [...prev, newCol]);
+    if (!persistenceError) persist('Collection', apiSend('POST', '/api/collections', { id: newCol.id, name, description, state }));
     showBanner(`Created database collection "${name}"`);
     return newCol.id;
   };
@@ -196,16 +236,17 @@ export default function App() {
           onAddLead={handleAddLead}
           onPushToSalesforce={handleSyncSingleLead}
           onCreateCollection={handleCreateCollection}
+          onOpenListings={() => setActiveTab('daily')}
         />
       )}
 
       {activeTab === 'daily' && (
         <DailyListingsFeed
-          properties={properties}
           leads={leads}
           onSyncPropertyToSalesforce={handleSyncSingleProperty}
           onJumpToMap={() => setActiveTab('map')}
           onDraftOutreachForProperty={() => setActiveTab('campaigns')}
+          onListingsChanged={() => void reloadListings()}
         />
       )}
 

@@ -107,7 +107,14 @@ export const LeadsPipeline: React.FC<LeadsPipelineProps> = ({
 
     setIsGeocoding(true);
     setFormError(null);
-    const geo = await geocodeAddress(`${formData.street}, ${formData.city}, ${formData.state} ${formData.postalCode}, USA`);
+    let geo: Awaited<ReturnType<typeof geocodeAddress>> = null;
+    try {
+      geo = await geocodeAddress(`${formData.street}, ${formData.city}, ${formData.state} ${formData.postalCode}, USA`);
+    } catch (error) {
+      setIsGeocoding(false);
+      setFormError(error instanceof Error ? error.message : 'Address lookup failed. Try again.');
+      return;
+    }
     setIsGeocoding(false);
     if (!geo?.streetAddress) {
       setFormError('OpenStreetMap did not return a verified house number and street for this address.');
