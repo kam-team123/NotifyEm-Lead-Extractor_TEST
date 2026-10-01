@@ -8,8 +8,10 @@ import {
   CheckCircle, 
   AlertTriangle, 
   Compass,
+  UserPlus,
+  X,
 } from 'lucide-react';
-import { RealEstateLead, PropertyListing, DatabaseCollection, SourceRunStatus } from '../../types';
+import { LeadCategory, RealEstateLead, PropertyListing, DatabaseCollection, SourceRunStatus } from '../../types';
 import { US_STATES } from '../../data/referenceData';
 import { geocodeAddress, MappedBuilding, searchMapRecords } from '../../services/openStreetMapService';
 import { DataSourcesPanel } from '../data/DataSourcesPanel';
@@ -64,6 +66,21 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
   // Discovered candidates
   const [candidates, setCandidates] = useState<MappedBuilding[]>([]);
   const [selectedCandidate, setSelectedCandidate] = useState<MappedBuilding | null>(null);
+  const [qualifyingCandidate, setQualifyingCandidate] = useState<MappedBuilding | null>(null);
+  const [qualificationError, setQualificationError] = useState<string | null>(null);
+  const [qualificationForm, setQualificationForm] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    phone: '',
+    company: '',
+    role: '' as RealEstateLead['role'] | '',
+    category: '' as LeadCategory | '',
+    street: '',
+    city: '',
+    state: '',
+    postalCode: ''
+  });
   const [showHeatmap, setShowHeatmap] = useState(true);
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [sourceStatuses, setSourceStatuses] = useState<SourceRunStatus[]>([]);
@@ -328,6 +345,59 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
 
   const handleRunDiscovery = () => {
     if (hasSearchLocation) triggerCandidateSearch(currentFocus.lat, currentFocus.lng);
+  };
+
+  const openQualificationForm = (candidate: MappedBuilding) => {
+    setQualifyingCandidate(candidate);
+    setQualificationError(null);
+    setQualificationForm({
+      firstName: '',
+      lastName: '',
+      email: '',
+      phone: '',
+      company: candidate.ownerName || '',
+      role: candidate.ownerName ? 'Property Owner' : '',
+      category: '',
+      street: candidate.address,
+      city: candidate.city,
+      state: candidate.state,
+      postalCode: candidate.postalCode
+    });
+  };
+
+  const handleQualificationSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const candidate = qualifyingCandidate;
+    const { role, category, ...form } = qualificationForm;
+    if (!candidate || !role || !category) return;
+    if (!candidate.sourceUrl) {
+      setQualificationError('This record has no source URL and cannot be added as a lead.');
+      return;
+    }
+
+    onAddLead({
+      firstName: form.firstName,
+      lastName: form.lastName,
+      email: form.email,
+      phone: form.phone,
+      brokerageOrCompany: form.company,
+      role,
+      category,
+      street: form.street,
+      city: form.city,
+      state: form.state,
+      postalCode: form.postalCode,
+      latitude: candidate.lat,
+      longitude: candidate.lng,
+      pipelineState: 'New',
+      leadSource: 'Lead Finder Discovery',
+      notes: [candidate.sourceLabel, candidate.parcelId ? `Parcel ID: ${candidate.parcelId}` : ''].filter(Boolean).join(' · '),
+      sourceUrl: candidate.sourceUrl,
+      verificationStatus: 'source_record',
+      confidenceScore: candidate.confidenceScore,
+      scoreReason: 'Manually qualified from a sourced property record.'
+    });
+    setQualifyingCandidate(null);
   };
 
   const handleStateSelect = (stateCode: string) => {
@@ -609,6 +679,18 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
                     )}
                   </div>
 
+                  <button
+                    type="button"
+                    onClick={event => {
+                      event.stopPropagation();
+                      openQualificationForm(candidate);
+                    }}
+                    className="w-full mt-3 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white text-xs font-bold rounded transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <UserPlus className="w-3.5 h-3.5" />
+                    Qualify &amp; Add to Leads
+                  </button>
+
                   {isSelected && (
                     <div className="mt-3 pt-2.5 border-t border-neutral-700/60 space-y-1 text-[11px] text-neutral-400">
                       {candidate.parcelId && <div>Parcel ID: <span className="font-mono">{candidate.parcelId}</span></div>}
@@ -791,6 +873,80 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
           style={{ minHeight: '100%' }}
         />
       </main>
+
+      {qualifyingCandidate && (
+        <div
+          className="fixed inset-0 z-[1000] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+          onMouseDown={event => {
+            if (event.target === event.currentTarget) setQualifyingCandidate(null);
+          }}
+        >
+          <section role="dialog" aria-modal="true" aria-labelledby="qualify-lead-title" className="w-full max-w-xl max-h-[90vh] overflow-y-auto bg-neutral-900 border border-neutral-700 rounded-lg shadow-2xl">
+            <div className="p-4 border-b border-neutral-800 flex items-start justify-between gap-3">
+              <div>
+                <h2 id="qualify-lead-title" className="text-sm font-bold text-white">Qualify property lead</h2>
+                <p className="mt-1 text-xs text-neutral-400">{qualifyingCandidate.address}</p>
+              </div>
+              <button type="button" onClick={() => setQualifyingCandidate(null)} title="Close" className="p-1 text-neutral-400 hover:text-white cursor-pointer">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {qualificationError && <div className="mx-4 mt-3 text-xs text-rose-300">{qualificationError}</div>}
+
+            <form onSubmit={handleQualificationSubmit} className="p-4 space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <label className="text-neutral-300">First name *
+                  <input required value={qualificationForm.firstName} onChange={event => setQualificationForm({ ...qualificationForm, firstName: event.target.value })} className="mt-1 w-full px-2.5 py-2 bg-neutral-950 border border-neutral-700 rounded text-neutral-100" />
+                </label>
+                <label className="text-neutral-300">Last name *
+                  <input required value={qualificationForm.lastName} onChange={event => setQualificationForm({ ...qualificationForm, lastName: event.target.value })} className="mt-1 w-full px-2.5 py-2 bg-neutral-950 border border-neutral-700 rounded text-neutral-100" />
+                </label>
+                <label className="text-neutral-300">Role *
+                  <select required value={qualificationForm.role} onChange={event => setQualificationForm({ ...qualificationForm, role: event.target.value as RealEstateLead['role'] | '' })} className="mt-1 w-full px-2.5 py-2 bg-neutral-950 border border-neutral-700 rounded text-neutral-100">
+                    <option value="">Choose role</option>
+                    {['Property Owner', 'Listing Agent', 'Broker', 'Real Estate Investor', 'Referral Partner', 'Homebuyer'].map(role => <option key={role} value={role}>{role}</option>)}
+                  </select>
+                </label>
+                <label className="text-neutral-300">Lead category *
+                  <select required value={qualificationForm.category} onChange={event => setQualificationForm({ ...qualificationForm, category: event.target.value as LeadCategory | '' })} className="mt-1 w-full px-2.5 py-2 bg-neutral-950 border border-neutral-700 rounded text-neutral-100">
+                    <option value="">Choose category</option>
+                    {['Residential Single-Family', 'Multi-Family 2-4 Units', 'Luxury Estate', 'Commercial & Retail', 'Distressed / Pre-Foreclosure', 'FSBO (For Sale By Owner)', 'Investor Buyer'].map(category => <option key={category} value={category}>{category}</option>)}
+                  </select>
+                </label>
+                <label className="text-neutral-300 col-span-2">Company / owner
+                  <input value={qualificationForm.company} onChange={event => setQualificationForm({ ...qualificationForm, company: event.target.value })} className="mt-1 w-full px-2.5 py-2 bg-neutral-950 border border-neutral-700 rounded text-neutral-100" />
+                </label>
+                <label className="text-neutral-300 col-span-2">Street address *
+                  <input required value={qualificationForm.street} onChange={event => setQualificationForm({ ...qualificationForm, street: event.target.value })} className="mt-1 w-full px-2.5 py-2 bg-neutral-950 border border-neutral-700 rounded text-neutral-100" />
+                </label>
+                <label className="text-neutral-300">City *
+                  <input required value={qualificationForm.city} onChange={event => setQualificationForm({ ...qualificationForm, city: event.target.value })} className="mt-1 w-full px-2.5 py-2 bg-neutral-950 border border-neutral-700 rounded text-neutral-100" />
+                </label>
+                <label className="text-neutral-300">State *
+                  <input required value={qualificationForm.state} onChange={event => setQualificationForm({ ...qualificationForm, state: event.target.value })} className="mt-1 w-full px-2.5 py-2 bg-neutral-950 border border-neutral-700 rounded text-neutral-100" />
+                </label>
+                <label className="text-neutral-300">ZIP code *
+                  <input required value={qualificationForm.postalCode} onChange={event => setQualificationForm({ ...qualificationForm, postalCode: event.target.value })} className="mt-1 w-full px-2.5 py-2 bg-neutral-950 border border-neutral-700 rounded text-neutral-100" />
+                </label>
+                <label className="text-neutral-300">Email
+                  <input type="email" value={qualificationForm.email} onChange={event => setQualificationForm({ ...qualificationForm, email: event.target.value })} className="mt-1 w-full px-2.5 py-2 bg-neutral-950 border border-neutral-700 rounded text-neutral-100" />
+                </label>
+                <label className="text-neutral-300">Phone
+                  <input type="tel" value={qualificationForm.phone} onChange={event => setQualificationForm({ ...qualificationForm, phone: event.target.value })} className="mt-1 w-full px-2.5 py-2 bg-neutral-950 border border-neutral-700 rounded text-neutral-100" />
+                </label>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setQualifyingCandidate(null)} className="px-3 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded cursor-pointer">Cancel</button>
+                <button type="submit" className="px-3 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-semibold rounded flex items-center gap-1.5 cursor-pointer">
+                  <CheckCircle className="w-3.5 h-3.5" /> Add Lead
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
     </div>
   );
 };
