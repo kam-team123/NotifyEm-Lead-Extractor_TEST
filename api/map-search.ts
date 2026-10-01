@@ -67,15 +67,19 @@ export const GET = handler(async request => {
         : {
             slug: 'osm',
             label: 'OpenStreetMap',
-            status: osm.value!.length ? 'ok' : 'empty',
-            count: osm.value!.length,
-            message: radius > OSM_MAX_RADIUS_MILES ? `Live OSM lookup limited to ${OSM_MAX_RADIUS_MILES} mi around the center.` : undefined,
+            status: osm.value!.records.length ? 'ok' : 'empty',
+            count: osm.value!.records.length,
+            message: osm.value!.fellBack
+              ? `OSM was busy, so the live lookup fell back to ${osm.value!.radiusMiles} mi around the center. Retry for the full ${Math.min(radius, OSM_MAX_RADIUS_MILES)} mi.`
+              : radius > OSM_MAX_RADIUS_MILES
+                ? `Live OSM lookup limited to ${OSM_MAX_RADIUS_MILES} mi around the center.`
+                : undefined,
             ms: osm.ms
           }
     );
   }
 
-  const live: MapRecord[] = osm?.value ?? [];
+  const live: MapRecord[] = osm?.value?.records ?? [];
   const merged = new Map<string, MapRecord>();
   for (const record of stored?.value ?? []) {
     if (record.sourceSlug === 'county-parcels' || record.sourceSlug.startsWith('parcel-layer:')) continue;

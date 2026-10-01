@@ -30,6 +30,9 @@ interface StoredPropertyRow {
   data_sources: { slug: string | null; source_name: string | null } | null;
 }
 
+const metaString = (metadata: Record<string, unknown> | null, key: string) =>
+  typeof metadata?.[key] === 'string' && metadata[key] ? (metadata[key] as string) : undefined;
+
 /** Properties already in Supabase (from earlier searches, Overture/Kaggle imports, MLS syncs) inside a bbox. */
 export async function queryStoredRecords(sb: SupabaseClient, box: BBox, limit: number): Promise<MapRecord[]> {
   const { data, error } = await sb
@@ -64,6 +67,10 @@ export async function queryStoredRecords(sb: SupabaseClient, box: BBox, limit: n
         assessedValue: row.tax_assessed_value ? Number(row.tax_assessed_value) : undefined,
         yearBuilt: row.year_built || undefined,
         lotAcres: typeof row.metadata?.lotAcres === 'number' ? row.metadata.lotAcres : undefined,
+        name: metaString(row.metadata, 'name'),
+        phone: metaString(row.metadata, 'phone'),
+        email: metaString(row.metadata, 'email'),
+        website: metaString(row.metadata, 'website'),
         sourceUrl: row.source_url || '',
         retrievedAt: row.updated_at,
         fromStore: true,
@@ -104,7 +111,9 @@ export async function persistRecords(sb: SupabaseClient, records: MapRecord[]): 
       confidence_score: r.confidenceScore,
       source_url: r.sourceUrl,
       verification_status: 'source_record',
-      metadata: r.lotAcres ? { lotAcres: r.lotAcres } : {},
+      metadata: Object.fromEntries(
+        Object.entries({ lotAcres: r.lotAcres, name: r.name, phone: r.phone, email: r.email, website: r.website }).filter(([, v]) => v)
+      ),
       updated_at: new Date().toISOString()
     }));
     for (let i = 0; i < rows.length; i += 500) {

@@ -11,8 +11,14 @@ const OVERPASS_ENDPOINTS = (process.env.OVERPASS_ENDPOINTS ||
   .map(s => s.trim())
   .filter(Boolean);
 
-/** Overpass gets expensive fast; larger radii are served from Supabase instead. */
-export const OSM_MAX_RADIUS_MILES = 3;
+/** Overpass gets expensive fast; larger radii are served from Supabase instead. Override with OSM_MAX_RADIUS_MILES. */
+export const OSM_MAX_RADIUS_MILES = Math.max(1, Math.min(25, Number(process.env.OSM_MAX_RADIUS_MILES) || 10));
+
+/** Inside this radius every addressed feature is requested; beyond it the outer ring is sampled. */
+const OSM_DENSE_RADIUS_MILES = 3;
+const DENSE_LIMIT = 1200;
+const OUTER_LIMIT = 1800;
+const METERS_PER_MILE = 1609.34;
 
 interface OverpassElement {
   type: string;
@@ -23,13 +29,44 @@ interface OverpassElement {
   tags?: Record<string, string>;
 }
 
-export async function fetchOsmBuildings(lat: number, lng: number, radiusMiles: number, budgetMs: number): Promise<MapRecord[]> {
-  const radius = Math.min(radiusMiles, OSM_MAX_RADIUS_MILES);
-  const b = bboxAround(lat, lng, radius);
-  const query =
-    `[out:json][timeout:20][bbox:${b.south.toFixed(5)},${b.west.toFixed(5)},${b.north.toFixed(5)},${b.east.toFixed(5)}];` +
-    `nwr["building"]["addr:housenumber"]["addr:street"];out center tags 300;`;
+export interface OsmResult {
+  records: MapRecord[];
+  /** Radius actually covered: smaller than requested when the cap applied or the wide query fell back. */
+  radiusMiles: number;
+  fellBack: boolean;
+}
 
+export async function fetchOsmBuildings(lat: number, lng: number, radiusMiles: number, budgetMs: number): Promise<OsmResult> {
+  const radius = Math.min(radiusMiles, OSM_MAX_RADIUS_MILES);
+  const dense = Math.min(radius, OSM_DENSE_RADIUS_MILES);
+  if (radius <= dense) {
+    return { records: await runQuery(buildQuery(lat, lng, dense, dense), budgetMs), radiusMiles: dense, fellBack: false };
+  }
+
+  // A wide query can time out on a busy Overpass server; keep part of the budget to retry the dense ring alone.
+  const deadline = Date.now() + budgetMs;
+  try {
+    return { records: await runQuery(buildQuery(lat, lng, radius, dense), Math.round(budgetMs * 0.6)), radiusMiles: radius, fellBack: false };
+  } catch (error) {
+    const remaining = deadline - Date.now();
+    if (remaining < 5000) throw error;
+    return { records: await runQuery(buildQuery(lat, lng, dense, dense), remaining), radiusMiles: dense, fellBack: true };
+  }
+}
+
+function buildQuery(lat: number, lng: number, radius: number, dense: number): string {
+  const b = bboxAround(lat, lng, radius);
+  // Any addressed feature counts: buildings, standalone address points and businesses (which carry contact tags).
+  // Overpass output is capped per statement, so the near ring is fetched first and fully, then the wider area.
+  const around = (miles: number) => `(around:${Math.round(miles * METERS_PER_MILE)},${lat.toFixed(6)},${lng.toFixed(6)})`;
+  return (
+    `[out:json][timeout:25][bbox:${b.south.toFixed(5)},${b.west.toFixed(5)},${b.north.toFixed(5)},${b.east.toFixed(5)}];` +
+    `nwr${around(dense)}["addr:housenumber"]["addr:street"];out center tags ${DENSE_LIMIT};` +
+    (radius > dense ? `nwr${around(radius)}["addr:housenumber"]["addr:street"];out center tags ${OUTER_LIMIT};` : '')
+  );
+}
+
+async function runQuery(query: string, budgetMs: number): Promise<MapRecord[]> {
   const deadline = Date.now() + budgetMs;
   const failures: string[] = [];
 
@@ -58,7 +95,7 @@ export async function fetchOsmBuildings(lat: number, lng: number, radiusMiles: n
   // Primary endpoint first (fails fast when overloaded), then race the mirrors for the remaining budget.
   const [primary, ...mirrors] = OVERPASS_ENDPOINTS;
   try {
-    return await attempt(primary, Math.min(10000, budgetMs));
+    return await attempt(primary, Math.min(12000, Math.round(budgetMs * 0.5)));
   } catch {
     const remaining = deadline - Date.now();
     if (mirrors.length && remaining > 3000) {
@@ -73,10 +110,27 @@ export async function fetchOsmBuildings(lat: number, lng: number, radiusMiles: n
   throw new Error(`OpenStreetMap Overpass is unavailable (${failures.join('; ') || 'time budget exhausted'}).`);
 }
 
+const BUSINESS_KEYS = ['shop', 'amenity', 'office', 'craft', 'tourism', 'healthcare', 'leisure'];
+
+function category(tags: Record<string, string>): string {
+  for (const key of BUSINESS_KEYS) {
+    if (tags[key] && tags[key] !== 'yes') return `${key}: ${tags[key].replace(/_/g, ' ')}`;
+  }
+  if (tags.building) return tags.building !== 'yes' ? tags.building : 'Building';
+  return 'Address point';
+}
+
+const firstTag = (tags: Record<string, string>, ...keys: string[]) => {
+  for (const key of keys) {
+    const value = tags[key]?.split(';')[0].trim();
+    if (value) return value;
+  }
+  return undefined;
+};
+
 function toRecords(elements: OverpassElement[]): MapRecord[] {
   const retrievedAt = new Date().toISOString();
-  const seen = new Set<string>();
-  const out: MapRecord[] = [];
+  const byKey = new Map<string, MapRecord>();
 
   for (const el of elements) {
     const tags = el.tags ?? {};
@@ -86,13 +140,27 @@ function toRecords(elements: OverpassElement[]): MapRecord[] {
     const lng = Number(point?.lon);
     if (!address || !isValidLatLng(lat, lng)) continue;
 
+    const contact = {
+      name: firstTag(tags, 'name', 'operator', 'brand'),
+      phone: firstTag(tags, 'phone', 'contact:phone', 'contact:mobile'),
+      email: firstTag(tags, 'email', 'contact:email'),
+      website: firstTag(tags, 'website', 'contact:website', 'url')
+    };
+
+    // The same address often appears as a building plus a business node inside it: keep one, merge contacts.
     const key = `${address.toLowerCase().replace(/\s+/g, ' ')}|${tags['addr:postcode'] ?? ''}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.name ??= contact.name;
+      existing.phone ??= contact.phone;
+      existing.email ??= contact.email;
+      existing.website ??= contact.website;
+      continue;
+    }
 
     const completeness = [tags['addr:city'], tags['addr:state'], tags['addr:postcode']].filter(Boolean).length;
     const externalId = `${el.type}/${el.id}`;
-    out.push({
+    byKey.set(key, {
       id: `osm:${externalId}`,
       sourceSlug: 'osm',
       sourceLabel: 'OpenStreetMap',
@@ -103,13 +171,14 @@ function toRecords(elements: OverpassElement[]): MapRecord[] {
       postalCode: tags['addr:postcode'] || '',
       lat,
       lng,
-      category: tags.building && tags.building !== 'yes' ? tags.building : 'Building',
+      category: category(tags),
       yearBuilt: Number(tags.start_date) || undefined,
+      ...contact,
       sourceUrl: `https://www.openstreetmap.org/${externalId}`,
       retrievedAt,
       fromStore: false,
       confidenceScore: Math.round((0.7 + completeness * 0.1) * 100)
     });
   }
-  return out;
+  return [...byKey.values()];
 }

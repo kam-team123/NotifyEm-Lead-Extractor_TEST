@@ -53,6 +53,15 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [hasSearchLocation, setHasSearchLocation] = useState(false);
+  const [searchStage, setSearchStage] = useState<'locating' | 'records'>('records');
+  const [searchSeconds, setSearchSeconds] = useState(0);
+
+  useEffect(() => {
+    if (!isSearching) return;
+    setSearchSeconds(0);
+    const timer = setInterval(() => setSearchSeconds(s => s + 1), 1000);
+    return () => clearInterval(timer);
+  }, [isSearching]);
 
   // Current focal coordinates
   const [currentFocus, setCurrentFocus] = useState<{ lat: number; lng: number; label: string; city: string; state: string }>({
@@ -114,6 +123,8 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
       const map = L.map(mapContainerRef.current, {
         center: [currentFocus.lat, currentFocus.lng],
         zoom: 11,
+        // Canvas keeps thousands of heatmap circles responsive; markers stay as DOM icons.
+        preferCanvas: true,
         zoomControl: true,
         attributionControl: true
       });
@@ -201,6 +212,53 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
     newTile.bringToBack();
   }, [mapTheme]);
 
+  /** Popup shown when a property marker is clicked: pick between the source record and qualifying it as a lead. */
+  const buildMarkerPopup = (candidate: MappedBuilding): HTMLElement => {
+    const locality = [candidate.city, candidate.state, candidate.postalCode].filter(Boolean).join(', ');
+    const contactRows = [
+      candidate.name && ['Name', escapeHtml(candidate.name)],
+      candidate.ownerName && ['Owner', escapeHtml(candidate.ownerName)],
+      candidate.phone && ['Phone', `<a href="tel:${escapeHtml(candidate.phone)}" class="text-cyan-300 hover:underline">${escapeHtml(candidate.phone)}</a>`],
+      candidate.email && ['Email', `<a href="mailto:${escapeHtml(candidate.email)}" class="text-cyan-300 hover:underline break-all">${escapeHtml(candidate.email)}</a>`],
+      candidate.website && [
+        'Web',
+        `<a href="${escapeHtml(/^https?:\/\//i.test(candidate.website) ? candidate.website : `https://${candidate.website}`)}" target="_blank" rel="noreferrer" class="text-cyan-300 hover:underline break-all">${escapeHtml(candidate.website.replace(/^https?:\/\//i, ''))}</a>`
+      ]
+    ].filter(Boolean) as [string, string][];
+
+    const root = document.createElement('div');
+    root.className = 'space-y-2';
+    root.innerHTML = `
+      <div>
+        <div class="text-[13px] font-semibold text-neutral-100 leading-snug">${escapeHtml(candidate.address)}</div>
+        <div class="text-[11px] text-neutral-400">${escapeHtml(locality || 'City/state not supplied by source')}</div>
+        <div class="mt-1 text-[11px]"><span class="text-cyan-300/90">${escapeHtml(candidate.category)}</span>
+          <span class="text-neutral-500"> · ${escapeHtml(candidate.sourceLabel)}</span></div>
+      </div>
+      ${
+        contactRows.length
+          ? `<div class="space-y-0.5 text-[11px] border-t border-neutral-800 pt-2">${contactRows
+              .map(([label, value]) => `<div class="flex gap-2"><span class="w-11 shrink-0 text-neutral-500">${label}</span><span class="min-w-0 text-neutral-200">${value}</span></div>`)
+              .join('')}</div>`
+          : '<div class="text-[11px] text-neutral-500 border-t border-neutral-800 pt-2">No contact details published for this record.</div>'
+      }
+      <div class="grid grid-cols-2 gap-1.5 pt-1">
+        <button type="button" data-action="source" class="py-1.5 rounded border border-neutral-700 bg-neutral-900 text-[11px] font-medium text-neutral-200 hover:border-cyan-500/50 hover:text-cyan-300 cursor-pointer disabled:opacity-40">View record</button>
+        <button type="button" data-action="qualify" class="py-1.5 rounded bg-gradient-to-r from-cyan-500 to-blue-600 text-[11px] font-bold text-white hover:from-cyan-400 hover:to-blue-500 cursor-pointer">Qualify &amp; Add</button>
+      </div>`;
+
+    const sourceButton = root.querySelector<HTMLButtonElement>('[data-action="source"]')!;
+    if (!candidate.sourceUrl) sourceButton.disabled = true;
+    sourceButton.addEventListener('click', () => {
+      if (candidate.sourceUrl) window.open(candidate.sourceUrl, '_blank', 'noopener,noreferrer');
+    });
+    root.querySelector('[data-action="qualify"]')!.addEventListener('click', () => {
+      mapInstanceRef.current?.closePopup();
+      openQualificationForm(candidate);
+    });
+    return root;
+  };
+
   // Update map layers when focus, candidates, leads, or heatmap state changes
   useEffect(() => {
     const map = mapInstanceRef.current;
@@ -279,12 +337,11 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
         });
 
         const marker = L.marker([candidate.lat, candidate.lng], { icon: candIcon });
-        marker.on('click', () => {
-          setSelectedCandidate(candidate);
-          if (candidate.sourceUrl) window.open(candidate.sourceUrl, '_blank', 'noopener,noreferrer');
-        });
+        marker.on('click', () => setSelectedCandidate(candidate));
+        marker.bindPopup(() => buildMarkerPopup(candidate), { className: 'leaflet-popup-dark', minWidth: 240, maxWidth: 280 });
+        const nameLine = candidate.name ? `<br/>${escapeHtml(candidate.name)}` : '';
         const ownerLine = candidate.ownerName ? `<br/>Owner: ${escapeHtml(candidate.ownerName)}` : '';
-        marker.bindTooltip(`${escapeHtml(candidate.address)}${ownerLine}<br/>${escapeHtml(candidate.sourceLabel)}`, {
+        marker.bindTooltip(`${escapeHtml(candidate.address)}${nameLine}${ownerLine}<br/>${escapeHtml(candidate.sourceLabel)}`, {
           className: 'leaflet-tooltip-dark'
         });
         marker.addTo(markersLayerRef.current!);
@@ -297,6 +354,7 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
     if (!addressInput.trim()) return;
 
     setIsSearching(true);
+    setSearchStage('locating');
     setSearchError(null);
     setCandidates([]);
     setSelectedCandidate(null);
@@ -325,6 +383,7 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
 
   const triggerCandidateSearch = async (lat: number, lng: number) => {
     setIsSearching(true);
+    setSearchStage('records');
     setSearchError(null);
     try {
       const result = await searchMapRecords(lat, lng, searchRadius);
@@ -354,9 +413,9 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
     setQualificationForm({
       firstName: '',
       lastName: '',
-      email: '',
-      phone: '',
-      company: candidate.ownerName || '',
+      email: candidate.email || '',
+      phone: candidate.phone || '',
+      company: candidate.ownerName || candidate.name || '',
       role: candidate.ownerName ? 'Property Owner' : '',
       category: '',
       street: candidate.address,
@@ -392,7 +451,11 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
       longitude: candidate.lng,
       pipelineState: 'New',
       leadSource: 'Lead Finder Discovery',
-      notes: [candidate.sourceLabel, candidate.parcelId ? `Parcel ID: ${candidate.parcelId}` : ''].filter(Boolean).join(' · '),
+      notes: [
+        candidate.sourceLabel,
+        candidate.parcelId ? `Parcel ID: ${candidate.parcelId}` : '',
+        candidate.website ? `Website: ${candidate.website}` : ''
+      ].filter(Boolean).join(' · '),
       sourceUrl: candidate.sourceUrl,
       verificationStatus: 'source_record',
       confidenceScore: candidate.confidenceScore,
@@ -413,6 +476,7 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
   const handleAddressSubmitFor = async (query: string) => {
     setAddressInput(`${query}, USA`);
     setIsSearching(true);
+    setSearchStage('locating');
     setSearchError(null);
     setCandidates([]);
     setSelectedCandidate(null);
@@ -661,8 +725,14 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
                       <div className="text-[11px] text-neutral-400 mt-0.5">
                         {[candidate.city, candidate.state, candidate.postalCode].filter(Boolean).join(', ') || 'City/state not supplied by source'}
                       </div>
+                      {candidate.name && <div className="text-[11px] text-neutral-200 mt-0.5">{candidate.name}</div>}
                       {candidate.ownerName && (
                         <div className="text-[11px] text-neutral-300 mt-0.5">Owner: {candidate.ownerName}</div>
+                      )}
+                      {(candidate.phone || candidate.email) && (
+                        <div className="text-[11px] text-neutral-400 mt-0.5 break-all">
+                          {[candidate.phone, candidate.email].filter(Boolean).join(' · ')}
+                        </div>
                       )}
                     </div>
                   </div>
@@ -878,6 +948,64 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
             ))}
           </div>
         </div>
+
+        {isSearching && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="absolute inset-0 z-[700] flex items-center justify-center bg-neutral-950/55 backdrop-blur-[2px]"
+          >
+            <div className="w-[min(320px,calc(100%-2rem))] rounded-lg border border-cyan-500/30 bg-neutral-950/95 p-5 shadow-[0_0_30px_rgba(6,182,212,0.2)]">
+              <div className="flex items-center gap-3">
+                <div className="relative h-10 w-10 shrink-0">
+                  <div className="absolute inset-0 rounded-full border-2 border-neutral-800" />
+                  <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-cyan-400 border-r-blue-500 animate-spin" />
+                  <MapPin className="absolute inset-0 m-auto h-4 w-4 text-cyan-300" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-neutral-100">Searching properties…</div>
+                  <div className="text-[11px] text-neutral-400 truncate">
+                    {searchStage === 'locating' ? addressInput || 'Finding location' : `${searchRadius} mi around ${currentFocus.label}`}
+                  </div>
+                </div>
+              </div>
+
+              <ol className="mt-4 space-y-2 text-[12px]">
+                {[
+                  { key: 'locating', label: 'Finding the location' },
+                  { key: 'records', label: 'Loading Supabase + OpenStreetMap records' }
+                ].map((step, index) => {
+                  const done = searchStage === 'records' && step.key === 'locating';
+                  const active = searchStage === step.key;
+                  return (
+                    <li key={step.key} className="flex items-center gap-2">
+                      {done ? (
+                        <CheckCircle className="h-4 w-4 shrink-0 text-cyan-400" />
+                      ) : (
+                        <span
+                          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[9px] font-bold ${
+                            active ? 'border-cyan-400 text-cyan-300 animate-pulse' : 'border-neutral-700 text-neutral-600'
+                          }`}
+                        >
+                          {index + 1}
+                        </span>
+                      )}
+                      <span className={done ? 'text-neutral-500' : active ? 'text-neutral-100' : 'text-neutral-600'}>{step.label}</span>
+                    </li>
+                  );
+                })}
+              </ol>
+
+              <div className="mt-4 h-1 overflow-hidden rounded-full bg-neutral-800">
+                <div className="h-full w-1/3 rounded-full bg-gradient-to-r from-cyan-400 to-blue-600 animate-[loading-bar_1.4s_ease-in-out_infinite]" />
+              </div>
+              <div className="mt-2 flex justify-between text-[10px] font-mono text-neutral-500">
+                <span>{searchSeconds}s elapsed</span>
+                {searchStage === 'records' && searchSeconds >= 8 && <span>Larger areas can take ~30s</span>}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Leaflet DOM Node with guaranteed absolute positioning */}
         <div 

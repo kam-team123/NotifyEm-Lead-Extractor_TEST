@@ -185,6 +185,11 @@ export interface MapRecord {
   assessedValue?: number;
   yearBuilt?: number;
   lotAcres?: number;
+  /** Business / building name and public contact details tagged on the source record. */
+  name?: string;
+  phone?: string;
+  email?: string;
+  website?: string;
   sourceUrl: string;
   retrievedAt: string;
   /** true when served from Supabase rather than fetched live during this search. */
