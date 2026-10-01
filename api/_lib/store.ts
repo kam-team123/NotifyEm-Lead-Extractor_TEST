@@ -30,8 +30,6 @@ interface StoredPropertyRow {
   data_sources: { slug: string | null; source_name: string | null } | null;
 }
 
-function normalizeSourceUrl(value: string | null): string {
-
 /** Properties already in Supabase (from earlier searches, Overture/Kaggle imports, MLS syncs) inside a bbox. */
 export async function queryStoredRecords(sb: SupabaseClient, box: BBox, limit: number): Promise<MapRecord[]> {
   const { data, error } = await sb

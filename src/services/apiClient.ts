@@ -6,6 +6,18 @@ export class ApiError extends Error {
   }
 }
 
+// Our handlers send { error: "text" }; Vercel's own crash pages send { error: { code, message } }.
+function errorMessage(error: unknown, status: number): string {
+  if (typeof error === 'string' && error) return error;
+  if (error && typeof error === 'object') {
+    const { message, code } = error as { message?: unknown; code?: unknown };
+    if (typeof message === 'string' && message) {
+      return `${message}${code ? ` (${code})` : ''} — the server function crashed; check the Vercel function logs.`;
+    }
+  }
+  return `Request failed (HTTP ${status}).`;
+}
+
 export async function apiFetch<T>(path: string, init: RequestInit = {}, timeoutMs = 60000): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -36,7 +48,7 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}, timeoutM
         : `Unexpected server response (HTTP ${response.status}).`
     );
   }
-  if (!response.ok) throw new ApiError(response.status, body?.error || `Request failed (HTTP ${response.status}).`);
+  if (!response.ok) throw new ApiError(response.status, errorMessage(body?.error, response.status));
   return body as T;
 }
 
