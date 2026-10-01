@@ -1,5 +1,6 @@
 import React from 'react';
-import { Building2, RefreshCw, Database } from 'lucide-react';
+import { RefreshCw, Database } from 'lucide-react';
+import logo from '../../assets/images/notifyem-logo.svg';
 import { SalesforceConfig } from '../../types';
 
 interface TopBarProps {
@@ -21,17 +22,18 @@ export const TopBar: React.FC<TopBarProps> = ({
 }) => {
   return (
     <header className="flex items-center justify-between px-6 py-3.5 bg-neutral-950 border-b border-neutral-800 shrink-0">
-      {/* Zone 1: Single text element wordmark in display style */}
       <div className="flex items-center gap-3">
-        <a 
-          href="#dashboard" 
+        <a
+          href="#dashboard"
           onClick={(e) => { e.preventDefault(); onSelectTab('map'); }}
-          className="text-xl font-bold tracking-tight text-white hover:text-cyan-400 transition-colors flex items-center gap-2"
+          className="flex items-center transition-opacity hover:opacity-95"
+          aria-label="Notifyem dashboard"
         >
-          <span className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shadow-[0_0_12px_rgba(6,182,212,0.25)]">
-            <Building2 className="w-4 h-4" />
-          </span>
-          <span className="bg-gradient-to-r from-white via-cyan-100 to-blue-300 bg-clip-text text-transparent">Notifyem</span>
+          <img
+            src={logo}
+            alt="Notifyem logo"
+            className="h-12 w-auto select-none object-contain md:h-14"
+          />
         </a>
       </div>
 
