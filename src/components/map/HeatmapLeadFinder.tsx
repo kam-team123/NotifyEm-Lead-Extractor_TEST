@@ -15,6 +15,7 @@ import { LeadCategory, RealEstateLead, PropertyListing, DatabaseCollection, Sour
 import { US_STATES } from '../../data/referenceData';
 import { geocodeAddress, MappedBuilding, searchMapRecords } from '../../services/openStreetMapService';
 import { DataSourcesPanel } from '../data/DataSourcesPanel';
+import { SidebarSection } from './SidebarSection';
 
 const escapeHtml = (value: string) =>
   value.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!);
@@ -75,6 +76,29 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
   // Discovered candidates
   const [candidates, setCandidates] = useState<MappedBuilding[]>([]);
   const [selectedCandidate, setSelectedCandidate] = useState<MappedBuilding | null>(null);
+  const [propertyQuery, setPropertyQuery] = useState('');
+  const markersByIdRef = useRef(new Map<string, L.Marker>());
+
+  // Every word must match somewhere in the record, so "oak 39201" finds Oak St in that ZIP.
+  const queryWords = propertyQuery.toLowerCase().split(/\s+/).filter(Boolean);
+  const visibleCandidates = queryWords.length
+    ? candidates.filter(c => {
+        const haystack = [c.address, c.city, c.state, c.postalCode, c.category, c.name, c.ownerName, c.phone, c.email, c.website, c.parcelId, c.sourceLabel]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        return queryWords.every(word => haystack.includes(word));
+      })
+    : candidates;
+
+  /** Selects a property from the list and flies the map to its marker. */
+  const focusCandidate = (candidate: MappedBuilding) => {
+    setSelectedCandidate(candidate);
+    const map = mapInstanceRef.current;
+    if (!map) return;
+    map.setView([candidate.lat, candidate.lng], Math.max(map.getZoom(), 16));
+    markersByIdRef.current.get(candidate.id)?.openPopup();
+  };
   const [qualifyingCandidate, setQualifyingCandidate] = useState<MappedBuilding | null>(null);
   const [qualificationError, setQualificationError] = useState<string | null>(null);
   const [qualificationForm, setQualificationForm] = useState({
@@ -327,6 +351,7 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
       }
 
       // Discovered candidates markers - Electric Blue
+      markersByIdRef.current.clear();
       candidates.forEach(candidate => {
         const color = sourceColor(candidate.sourceSlug);
         const candIcon = L.divIcon({
@@ -345,6 +370,7 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
           className: 'leaflet-tooltip-dark'
         });
         marker.addTo(markersLayerRef.current!);
+        markersByIdRef.current.set(candidate.id, marker);
       });
     }
   }, [currentFocus, searchRadius, showHeatmap, candidates, hasSearchLocation]);
@@ -385,6 +411,7 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
     setIsSearching(true);
     setSearchStage('records');
     setSearchError(null);
+    setPropertyQuery('');
     try {
       const result = await searchMapRecords(lat, lng, searchRadius);
       setCandidates(result.records);
@@ -500,7 +527,7 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
     <div className="flex-1 min-h-0 flex flex-col xl:flex-row overflow-hidden bg-neutral-950">
       {/* Left Control Panel / Search Configuration (SOP Section 04) */}
       <aside className="w-full xl:w-[410px] max-h-[calc(100dvh-62px-50vh)] xl:max-h-none xl:h-full border-r border-neutral-800 bg-neutral-900/90 flex flex-col shrink-0 overflow-y-auto z-10">
-        <div className="p-4 border-b border-neutral-800">
+        <div className="p-4 border-b border-neutral-800 shrink-0">
           <div className="flex items-center justify-between">
             <h1 className="text-base font-semibold text-white tracking-tight">Property Map</h1>
             <div className="flex items-center gap-1.5 text-xs text-neutral-400">
@@ -514,10 +541,19 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
         </div>
 
         {/* Section 04 Part C: User Address Input */}
-        <div className="p-4 border-b border-neutral-800 space-y-3">
-          <label className="block text-xs font-semibold text-neutral-300">
-            Search Location (Address, City, State, or ZIP)
-          </label>
+        {searchError && (
+          <div className="px-4 py-2.5 border-b border-neutral-800 text-xs text-rose-400 flex items-start gap-1.5 shrink-0">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            <span>{searchError}</span>
+          </div>
+        )}
+
+        <SidebarSection
+          title="Search Location (Address, City, State, or ZIP)"
+          icon={<MapPin className="w-3.5 h-3.5 text-cyan-400 shrink-0" />}
+          summary={hasSearchLocation ? currentFocus.label : 'No location searched yet'}
+          storageKey="notifyem.locationSectionOpen"
+        >
           <form onSubmit={handleAddressSubmit} className="space-y-2">
             <div className="relative">
               <input
@@ -541,13 +577,6 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
               </button>
             </div>
           </form>
-
-          {searchError && (
-            <div className="text-xs text-rose-400 flex items-start gap-1.5 pt-1">
-              <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-              <span>{searchError}</span>
-            </div>
-          )}
 
           {sourceStatuses.length > 0 && (
             <div className="space-y-1 pt-1">
@@ -604,19 +633,22 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
               ))}
             </div>
           </div>
-        </div>
+        </SidebarSection>
 
         {/* Section 04 Part D: Adjustable Radius & Discovery Provider */}
-        <div className="p-4 border-b border-neutral-800 space-y-3.5">
+        <SidebarSection
+          title="Adjustable Search Radius"
+          icon={<Compass className="w-3.5 h-3.5 text-cyan-400 shrink-0" />}
+          summary={`${searchRadius} mi · ~${Math.round(Math.PI * searchRadius * searchRadius).toLocaleString()} sq mi`}
+          storageKey="notifyem.radiusSectionOpen"
+        >
           {/* Fully Adjustable Search Radius Slider & Direct Input */}
           <div className="space-y-2 bg-neutral-950 p-3 rounded-lg border border-neutral-800">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold text-neutral-200 flex items-center gap-1.5">
-                <Compass className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Adjustable Search Radius</span>
-              </label>
+              <label htmlFor="sidebar-radius" className="text-xs font-medium text-neutral-400">Radius</label>
               <div className="flex items-center gap-1">
                 <input
+                  id="sidebar-radius"
                   type="number"
                   min={1}
                   max={500}
@@ -664,8 +696,10 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
               ))}
             </div>
           </div>
+        </SidebarSection>
 
-          {/* Action to re-run discovery */}
+        {/* Action to re-run discovery (always visible, even with the sections collapsed) */}
+        <div className="px-4 py-3 border-b border-neutral-800 shrink-0">
           <div className="flex items-center gap-2">
             <button
               onClick={handleRunDiscovery}
@@ -694,23 +728,48 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
         <DataSourcesPanel refreshKey={sourcesRefreshKey} onOpenListings={onOpenListings} />
 
         {/* Discovered Candidates List (Section 04 Step 9) */}
-        <div className="flex-1 p-4 overflow-y-auto">
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-xs font-semibold text-neutral-300 uppercase tracking-wider">
-              Properties found ({candidates.length})
+        <div className="flex-1 px-4 pb-4">
+          <div className="sticky top-0 z-10 -mx-4 px-4 pt-4 pb-2 mb-1 bg-neutral-900/95 backdrop-blur-sm space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="text-xs font-semibold text-neutral-300 uppercase tracking-wider">
+                Properties found ({propertyQuery.trim() ? `${visibleCandidates.length} of ${candidates.length}` : candidates.length})
+              </div>
+              <div className="text-[11px] text-neutral-500">
+                {lastSync ? `Updated ${new Date(lastSync).toLocaleString()}` : 'No search run'}
+              </div>
             </div>
-            <div className="text-[11px] text-neutral-500">
-              {lastSync ? `Updated ${new Date(lastSync).toLocaleString()}` : 'No search run'}
-            </div>
+            {candidates.length > 0 && (
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-neutral-500 absolute left-2.5 top-2" />
+                <input
+                  type="search"
+                  value={propertyQuery}
+                  onChange={event => setPropertyQuery(event.target.value)}
+                  placeholder="Find a street, name, ZIP, type, phone…"
+                  aria-label="Filter properties found"
+                  className="w-full pl-8 pr-8 py-1.5 bg-neutral-950 border border-neutral-700 rounded-md text-xs text-neutral-100 placeholder:text-neutral-500 focus:outline-none focus:border-cyan-400"
+                />
+                {propertyQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setPropertyQuery('')}
+                    aria-label="Clear filter"
+                    className="absolute right-1.5 top-1 p-0.5 text-neutral-500 hover:text-cyan-300 cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="space-y-2">
-            {candidates.map((candidate) => {
+            {visibleCandidates.map((candidate) => {
               const isSelected = selectedCandidate?.id === candidate.id;
               return (
                 <div
                   key={candidate.id}
-                  onClick={() => setSelectedCandidate(candidate)}
+                  onClick={() => focusCandidate(candidate)}
                   className={`p-3 rounded-md border text-left cursor-pointer transition-all ${
                     isSelected
                       ? 'bg-neutral-900 border-cyan-500 shadow-[0_0_12px_rgba(6,182,212,0.2)]'
@@ -781,6 +840,15 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
                 </div>
               );
             })}
+
+            {candidates.length > 0 && visibleCandidates.length === 0 && (
+              <div className="text-center py-8 text-neutral-500 text-xs">
+                No properties match “{propertyQuery.trim()}”.{' '}
+                <button type="button" onClick={() => setPropertyQuery('')} className="text-cyan-300 hover:underline cursor-pointer">
+                  Clear filter
+                </button>
+              </div>
+            )}
 
             {candidates.length === 0 && !isSearching && (
               <div className="text-center py-8 text-neutral-500 text-xs">
