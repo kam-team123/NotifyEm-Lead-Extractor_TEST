@@ -21,7 +21,7 @@ const escapeHtml = (value: string) =>
 
 /** Marker colour per data source family. */
 const sourceColor = (slug: string) =>
-  slug === 'osm' ? '#3b82f6' : slug.startsWith('parcel-layer:') ? '#10b981' : slug === 'overture' ? '#8b5cf6' : '#06b6d4';
+  slug === 'osm' ? '#3b82f6' : slug === 'overture' ? '#8b5cf6' : '#06b6d4';
 
 interface HeatmapLeadFinderProps {
   leads: RealEstateLead[];
@@ -445,7 +445,7 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
             </div>
           </div>
           <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
-            Searches OpenStreetMap buildings, connected county parcel layers (owner and assessed value) and everything already saved in Supabase.
+            Searches OpenStreetMap buildings and property records already saved in Supabase.
           </p>
         </div>
 
@@ -714,7 +714,7 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
 
             {candidates.length === 0 && !isSearching && (
               <div className="text-center py-8 text-neutral-500 text-xs">
-                {searchError ? 'No records loaded because the source requests failed.' : hasSearchLocation ? 'No property records were returned for this search. Try a city address or connect a county parcel layer.' : 'Search a location to load property records.'}
+                {searchError ? 'No records loaded because the source requests failed.' : hasSearchLocation ? 'No property records were returned for this search. Try a nearby city or street address.' : 'Search a location to load property records.'}
               </div>
             )}
           </div>
@@ -826,9 +826,8 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
             </div>
             {[
               { label: 'OpenStreetMap', color: sourceColor('osm'), match: (slug: string) => slug === 'osm' },
-              { label: 'County parcels', color: sourceColor('parcel-layer:'), match: (slug: string) => slug.startsWith('parcel-layer:') },
               { label: 'Overture', color: sourceColor('overture'), match: (slug: string) => slug === 'overture' },
-              { label: 'MLS / Kaggle / other', color: sourceColor('other'), match: (slug: string) => !['osm', 'overture'].includes(slug) && !slug.startsWith('parcel-layer:') }
+              { label: 'MLS / Kaggle / other', color: sourceColor('other'), match: (slug: string) => !['osm', 'overture'].includes(slug) }
             ].map(item => (
               <div key={item.label} className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: item.color, boxShadow: `0 0 6px ${item.color}` }} />

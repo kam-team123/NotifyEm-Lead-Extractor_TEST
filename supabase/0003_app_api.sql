@@ -108,8 +108,6 @@ insert into public.data_sources (slug, source_name, source_type, provider, count
 values
   ('osm', 'OpenStreetMap', 'osm', 'OpenStreetMap contributors', 'US', 'free', 'ODbL', 'https://overpass-api.de/api/interpreter', 'public',
     '{"best_for":"Address-tagged buildings near a map search"}'),
-  ('county-parcels', 'County Tax Assessor / GIS Parcel Layers', 'gis_portal', 'County and state GIS portals (ArcGIS REST)', 'US', 'free', 'Public', null, 'public',
-    '{"best_for":"Parcel ids, site addresses, owner names, assessed values"}'),
   ('overture', 'Overture Maps Foundation', 'overture_maps', 'Overture Maps Foundation', 'Global', 'free', 'CDLA-Permissive-2.0 / ODbL', 'https://docs.overturemaps.org', 'public',
     '{"best_for":"Address points imported with scripts/import-overture.mjs"}'),
   ('kaggle', 'Kaggle Real Estate Datasets', 'kaggle', 'Kaggle', 'US', 'free', 'Dataset license', 'https://www.kaggle.com/datasets?search=real+estate', 'public',
@@ -119,9 +117,6 @@ values
   ('mls', 'MLS (RESO Web API)', 'mls', 'Configured with MLS_* environment variables', 'US', 'licensed', 'IDX/VOW data license', null, 'licensed',
     '{"best_for":"Active, pending and new listings"}')
 on conflict (slug) do nothing;
-
--- Child rows for individual county / statewide ArcGIS parcel layers registered from the app.
--- They use slug = 'parcel-layer:<hash>' and source_type = 'gis_portal'.
 
 -- ---------------------------------------------------------------------------
 -- properties: normalised columns + external id for idempotent upserts.

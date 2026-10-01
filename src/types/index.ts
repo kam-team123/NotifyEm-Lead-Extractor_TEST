@@ -170,7 +170,7 @@ export interface USStateSummary {
 /** One property/building point shown on the map, from any data source. */
 export interface MapRecord {
   id: string; // `${sourceSlug}:${externalId}`
-  sourceSlug: string; // 'osm' | 'overture' | 'kaggle' | 'mls' | 'parcel-layer:<id>'
+  sourceSlug: string; // 'osm' | 'overture' | 'kaggle' | 'mls' | other stored source
   sourceLabel: string;
   externalId: string;
   address: string;
@@ -247,5 +247,4 @@ export interface SourcesResponse {
     cronEnabled: boolean;
   };
   sources: DataSourceStatus[];
-  parcelLayers: DataSourceStatus[];
 }

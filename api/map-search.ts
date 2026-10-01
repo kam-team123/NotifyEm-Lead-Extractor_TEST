@@ -2,8 +2,6 @@ import type { MapRecord, MapSearchResponse, SourceRunStatus } from '../src/types
 import { handler, HttpError, json, numberParam } from './_lib/http.js';
 import { bboxAround, distanceMiles, isValidLatLng } from './_lib/geo.js';
 import { fetchOsmBuildings, OSM_MAX_RADIUS_MILES } from './_lib/osm.js';
-import { extentContains, queryParcelLayer } from './_lib/arcgis.js';
-import { catalogLayers, ensureParcelSource, loadParcelLayers, PARCEL_CATALOG } from './_lib/parcelLayers.js';
 import { getSupabase } from './_lib/supabase.js';
 import { persistRecords, queryStoredRecords } from './_lib/store.js';
 
@@ -11,12 +9,9 @@ import { persistRecords, queryStoredRecords } from './_lib/store.js';
 // Combines, in parallel:
 //   1. properties already stored in Supabase (earlier searches, Overture/Kaggle imports, MLS)
 //   2. live OpenStreetMap buildings with addresses (Overpass, mirrors)
-//   3. live county / statewide ArcGIS parcel layers covering the point
 // Live results are upserted into Supabase so the next search works even if a live source is down.
 
 const STORED_MAX_RADIUS = 50;
-const PARCEL_MAX_RADIUS = 2;
-const MAX_PARCEL_LAYERS = 3;
 const MAX_RECORDS = 1500;
 
 async function timed<T>(fn: () => Promise<T>): Promise<{ value?: T; error?: string; ms: number }> {
@@ -34,20 +29,16 @@ export const GET = handler(async request => {
   const lng = numberParam(url, 'lng');
   const radius = Math.max(0.25, Math.min(500, numberParam(url, 'radius', 5)));
   if (!isValidLatLng(lat, lng)) throw new HttpError(400, 'lat/lng are out of range.');
-  const include = new Set((url.searchParams.get('sources') || 'stored,osm,parcels').split(','));
+  const include = new Set((url.searchParams.get('sources') || 'stored,osm').split(','));
 
   const sb = getSupabase();
   const statuses: SourceRunStatus[] = [];
 
-  const layers = (await loadParcelLayers(sb)).filter(l => extentContains(l.extent, lat, lng)).slice(0, MAX_PARCEL_LAYERS);
-  const parcelBox = bboxAround(lat, lng, Math.min(radius, PARCEL_MAX_RADIUS));
-
-  const [stored, osm, ...parcels] = await Promise.all([
+  const [stored, osm] = await Promise.all([
     include.has('stored') && sb
       ? timed(() => queryStoredRecords(sb, bboxAround(lat, lng, Math.min(radius, STORED_MAX_RADIUS)), MAX_RECORDS))
       : Promise.resolve(null),
-    include.has('osm') ? timed(() => fetchOsmBuildings(lat, lng, radius, 40000)) : Promise.resolve(null),
-    ...(include.has('parcels') ? layers.map(layer => timed(() => queryParcelLayer(layer, parcelBox, 300, 20000))) : [])
+    include.has('osm') ? timed(() => fetchOsmBuildings(lat, lng, radius, 40000)) : Promise.resolve(null)
   ]);
 
   // Supabase
@@ -84,37 +75,12 @@ export const GET = handler(async request => {
     );
   }
 
-  // Parcels
-  if (include.has('parcels')) {
-    if (!layers.length) {
-      statuses.push({
-        slug: 'county-parcels',
-        label: 'County parcels',
-        status: 'skipped',
-        count: 0,
-        message: 'No parcel layer covers this location yet. Connect your county GIS parcel layer in the data sources panel.'
-      });
-    }
-    layers.forEach((layer, i) => {
-      const run = parcels[i];
-      statuses.push(
-        run.error
-          ? { slug: layer.slug, label: layer.name, status: 'error', count: 0, message: run.error, ms: run.ms }
-          : {
-              slug: layer.slug,
-              label: layer.name,
-              status: run.value!.length ? 'ok' : 'empty',
-              count: run.value!.length,
-              message: radius > PARCEL_MAX_RADIUS ? `Parcels limited to ${PARCEL_MAX_RADIUS} mi around the center.` : undefined,
-              ms: run.ms
-            }
-      );
-    });
-  }
-
-  const live: MapRecord[] = [...(osm?.value ?? []), ...parcels.flatMap(p => p.value ?? [])];
+  const live: MapRecord[] = osm?.value ?? [];
   const merged = new Map<string, MapRecord>();
-  for (const record of stored?.value ?? []) merged.set(record.id, record);
+  for (const record of stored?.value ?? []) {
+    if (record.sourceSlug === 'county-parcels' || record.sourceSlug.startsWith('parcel-layer:')) continue;
+    merged.set(record.id, record);
+  }
   for (const record of live) merged.set(record.id, record);
 
   const records = [...merged.values()]
@@ -127,11 +93,6 @@ export const GET = handler(async request => {
   let persisted = false;
   if (sb && live.length) {
     try {
-      const catalogSlugs = new Set(catalogLayers().map(l => l.slug));
-      for (const layer of layers.filter(l => catalogSlugs.has(l.slug))) {
-        const provider = PARCEL_CATALOG.find(c => c.url === layer.url)?.provider || 'State GIS';
-        await ensureParcelSource(sb, layer, provider);
-      }
       await persistRecords(sb, live);
       persisted = true;
     } catch (error) {

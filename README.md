@@ -1,19 +1,19 @@
 # Notifyem
 
 Real estate lead finder: property map, listings, leads pipeline and collections.
-Vite + React front end, with Vercel serverless functions in `api/` that talk to OpenStreetMap, public
-county/state parcel services, your MLS feed and Supabase.
+Vite + React front end, with Vercel serverless functions in `api/` that talk to OpenStreetMap,
+your MLS feed and Supabase.
 
 ## How data flows
 
 ```
 Browser ──► /api/*  (Vercel functions, server-side)
               ├── /api/geocode        Nominatim → Photon fallback
-              ├── /api/map-search     Supabase stored records + live OSM (Overpass mirrors) + live parcel layers
+              ├── /api/map-search     Supabase stored records + live OSM (Overpass mirrors)
               ├── /api/listings       MLS + Kaggle listings from Supabase
               ├── /api/mls/sync       RESO Web API → Supabase (button + daily Vercel Cron)
               ├── /api/import/kaggle  CSV rows (parsed in the browser) → Supabase
-              ├── /api/sources        data-source status, connect county parcel layers
+              ├── /api/sources        data-source status and MLS configuration
               └── /api/leads, /api/collections
 ```
 
@@ -32,7 +32,6 @@ The browser never calls Overpass or Supabase directly. Overpass rejects anonymou
 
 | Source | How it works in the app |
 | --- | --- |
-| County Tax Assessor / GIS parcels | Queried live on each map search. Built in: statewide WI, NC, IN, CO, WA, VT, CT, DE, AR, NJ, NY, MA, MT, TN, UT, MD, VA, HI, plus LA, Maricopa, Hennepin, Miami-Dade and Salt Lake counties. Add any other county's ArcGIS parcel layer from the map's data-sources panel. |
 | OpenStreetMap | Address-tagged buildings, live (≤ 3 mi radius), cached into Supabase. |
 | Overture Maps | `npm i --no-save @duckdb/node-api`, then `npm run import:overture -- --place "Austin, TX" --radius 5`. |
 | Kaggle | Listings page → *Import Kaggle CSV* (streams large files, filters by state). Stored as historical snapshots. |
