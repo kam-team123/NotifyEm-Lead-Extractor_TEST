@@ -43,8 +43,9 @@ export default function App() {
   // Status and feedback
   const [isSyncing, setIsSyncing] = useState(false);
   const [bannerNotice, setBannerNotice] = useState<string | null>(null);
-  // null = still checking; string = why leads/collections are not being saved to Supabase.
-  const [persistenceError, setPersistenceError] = useState<string | null>(null);
+  // Why leads / collections are not being saved to Supabase (null = loaded fine or still checking).
+  const [leadsError, setLeadsError] = useState<string | null>(null);
+  const [collectionsError, setCollectionsError] = useState<string | null>(null);
 
   // Quick Notification Banner helper
   const showBanner = (msg: string, ms = 4000) => {
@@ -68,14 +69,11 @@ export default function App() {
         apiGet<{ leads: RealEstateLead[] }>('/api/leads'),
         apiGet<{ collections: DatabaseCollection[] }>('/api/collections')
       ]);
+      const reason = (r: PromiseRejectedResult) => (r.reason instanceof Error ? r.reason.message : String(r.reason));
       if (leadRes.status === 'fulfilled') setLeads(leadRes.value.leads);
+      else setLeadsError(reason(leadRes));
       if (collectionRes.status === 'fulfilled') setCollections(collectionRes.value.collections);
-      const failure = [leadRes, collectionRes].find(r => r.status === 'rejected') as PromiseRejectedResult | undefined;
-      if (failure) {
-        const reason = failure.reason instanceof Error ? failure.reason.message : String(failure.reason);
-        setPersistenceError(reason);
-        showBanner(`Leads and collections are not being saved: ${reason}`, 9000);
-      }
+      else setCollectionsError(reason(collectionRes));
     })();
     void reloadListings();
   }, []);
@@ -161,14 +159,14 @@ export default function App() {
     };
 
     setLeads(prev => [newLead, ...prev]);
-    if (!persistenceError) persist('Lead', apiSend('POST', '/api/leads', newLead));
+    if (!leadsError) persist('Lead', apiSend('POST', '/api/leads', newLead));
     showBanner(`Added new real estate lead: ${newLead.firstName} ${newLead.lastName} (${newLead.category})`);
   };
 
   // Update Lead Pipeline State
   const handleUpdateLeadState = (leadId: string, newState: PipelineState) => {
     setLeads(prev => prev.map(l => l.id === leadId ? { ...l, pipelineState: newState } : l));
-    if (!persistenceError) persist('Pipeline change', apiSend('PATCH', `/api/leads?id=${encodeURIComponent(leadId)}`, { pipelineState: newState }));
+    if (!leadsError) persist('Pipeline change', apiSend('PATCH', `/api/leads?id=${encodeURIComponent(leadId)}`, { pipelineState: newState }));
   };
 
   // Create Database Collection
@@ -184,7 +182,7 @@ export default function App() {
       updatedAt: new Date().toISOString()
     };
     setCollections(prev => [...prev, newCol]);
-    if (!persistenceError) persist('Collection', apiSend('POST', '/api/collections', { id: newCol.id, name, description, state }));
+    if (!collectionsError) persist('Collection', apiSend('POST', '/api/collections', { id: newCol.id, name, description, state }));
     showBanner(`Created database collection "${name}"`);
     return newCol.id;
   };
@@ -220,6 +218,20 @@ export default function App() {
       />
 
       {/* Floating System Notice Banner */}
+      {(leadsError || collectionsError) && (
+        <div role="alert" className="shrink-0 px-6 py-2 bg-rose-950/70 border-b border-rose-500/40 text-xs text-rose-100 flex items-start gap-2">
+          <span className="mt-1 w-2 h-2 rounded-full bg-rose-400 shrink-0" />
+          <span>
+            <strong className="font-semibold">Not saving to Supabase</strong> — {leadsError ? 'leads and pipeline changes' : 'collections'} you
+            add now will be lost on refresh.
+            <span className="text-rose-300/80"> {leadsError || collectionsError}</span>
+            {leadsError && /does not exist/.test(leadsError) && (
+              <span className="text-rose-200"> Run supabase/0005_fix_leads_table.sql in the Supabase SQL editor, then reload.</span>
+            )}
+          </span>
+        </div>
+      )}
+
       {bannerNotice && (
         <div className="fixed top-14 right-6 z-50 bg-neutral-950/95 border border-cyan-500/60 shadow-[0_0_20px_rgba(6,182,212,0.3)] rounded-md px-4 py-2.5 text-xs text-cyan-100 flex items-center gap-2 animate-fade-in backdrop-blur-md">
           <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping shadow-[0_0_8px_#06b6d4]" />
