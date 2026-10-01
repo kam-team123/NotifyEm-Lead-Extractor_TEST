@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   Cloud, 
   RefreshCw, 
@@ -47,6 +47,9 @@ export const SalesforceCenter: React.FC<SalesforceCenterProps> = ({
   // Settings form state
   const [formConfig, setFormConfig] = useState<SalesforceConfig>(config);
   const [settingsSuccess, setSettingsSuccess] = useState(false);
+
+  // Saved settings load from Supabase after mount; show them once they arrive.
+  useEffect(() => setFormConfig(config), [config]);
 
   const syncedLeadCount = leads.filter(l => l.salesforceSyncStatus === 'Synced').length;
   const pendingLeadCount = leads.filter(l => l.salesforceSyncStatus !== 'Synced').length;

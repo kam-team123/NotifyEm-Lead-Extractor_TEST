@@ -25,6 +25,10 @@ interface LeadsPipelineProps {
   leads: RealEstateLead[];
   collections: DatabaseCollection[];
   onUpdateLeadState: (leadId: string, newState: PipelineState) => void;
+  /** collectionId '' removes the lead from its collection. */
+  onUpdateLeadCollection: (leadId: string, collectionId: string) => void;
+  /** Collection to filter by when the pipeline opens ('ALL' for none). */
+  initialCollectionFilter: string;
   onAddLead: (lead: Partial<RealEstateLead>) => void;
   onSyncSingleLeadToSalesforce: (lead: RealEstateLead) => void;
   onSelectLeadForOutreach: (lead: RealEstateLead) => void;
@@ -43,6 +47,8 @@ export const LeadsPipeline: React.FC<LeadsPipelineProps> = ({
   leads,
   collections,
   onUpdateLeadState,
+  onUpdateLeadCollection,
+  initialCollectionFilter,
   onAddLead,
   onSyncSingleLeadToSalesforce,
   onSelectLeadForOutreach
@@ -50,6 +56,7 @@ export const LeadsPipeline: React.FC<LeadsPipelineProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedState, setSelectedState] = useState<string>('ALL');
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
+  const [selectedCollection, setSelectedCollection] = useState<string>(initialCollectionFilter);
   const [viewMode, setViewMode] = useState<'kanban' | 'table'>('kanban');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
@@ -76,6 +83,7 @@ export const LeadsPipeline: React.FC<LeadsPipelineProps> = ({
   const filteredLeads = leads.filter(lead => {
     if (selectedState !== 'ALL' && lead.state !== selectedState) return false;
     if (selectedCategory !== 'ALL' && lead.category !== selectedCategory) return false;
+    if (selectedCollection === 'NONE' ? lead.collectionId : selectedCollection !== 'ALL' && lead.collectionId !== selectedCollection) return false;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const matchName = `${lead.firstName} ${lead.lastName}`.toLowerCase().includes(q);
@@ -242,6 +250,19 @@ export const LeadsPipeline: React.FC<LeadsPipelineProps> = ({
             <option value="Distressed / Pre-Foreclosure">Distressed / Pre-Foreclosure</option>
             <option value="FSBO (For Sale By Owner)">FSBO (For Sale By Owner)</option>
           </select>
+
+          <select
+            value={selectedCollection}
+            onChange={(e) => setSelectedCollection(e.target.value)}
+            aria-label="Filter by collection"
+            className="px-2.5 py-1.5 bg-neutral-950 border border-neutral-700 rounded text-xs text-neutral-200 focus:outline-none focus:border-cyan-400 cursor-pointer"
+          >
+            <option value="ALL">All Collections</option>
+            <option value="NONE">Not in a collection</option>
+            {collections.map(c => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
         </div>
 
         <div className="text-xs text-neutral-400 font-mono tabular-nums">
@@ -316,10 +337,21 @@ export const LeadsPipeline: React.FC<LeadsPipelineProps> = ({
                           <div>Score: {lead.scoreReason}</div>
                         </div>
 
-                        {/* Collection Tag if present */}
-                        {colName && (
-                          <div className="text-[10px] text-neutral-400 truncate">
-                            Collection: <span className="text-cyan-200/90">{colName}</span>
+                        {/* Collection assignment */}
+                        {collections.length > 0 && (
+                          <div className="flex items-center justify-between gap-2 text-[10px] text-neutral-500">
+                            <span>Collection:</span>
+                            <select
+                              value={colName ? lead.collectionId : ''}
+                              onChange={(e) => onUpdateLeadCollection(lead.id, e.target.value)}
+                              aria-label={`Collection for ${lead.firstName} ${lead.lastName}`}
+                              className="min-w-0 max-w-[60%] truncate bg-neutral-900 border border-neutral-700 rounded px-1.5 py-0.5 text-[10px] text-cyan-200/90 cursor-pointer"
+                            >
+                              <option value="">None</option>
+                              {collections.map(c => (
+                                <option key={c.id} value={c.id}>{c.name}</option>
+                              ))}
+                            </select>
                           </div>
                         )}
 

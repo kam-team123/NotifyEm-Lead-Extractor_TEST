@@ -8,6 +8,7 @@ import {
   Clock, 
   ArrowRight,
   Trash2,
+  Pencil,
   CheckCircle2
 } from 'lucide-react';
 import { DatabaseCollection, RealEstateLead } from '../../types';
@@ -17,6 +18,8 @@ interface CollectionsManagerProps {
   collections: DatabaseCollection[];
   leads: RealEstateLead[];
   onCreateCollection: (name: string, description: string, state: string) => void;
+  onUpdateCollection: (collectionId: string, changes: { name: string; description: string; state: string }) => void;
+  onDeleteCollection: (collectionId: string) => void;
   onFilterByCollection: (collectionId: string) => void;
 }
 
@@ -24,12 +27,27 @@ export const CollectionsManager: React.FC<CollectionsManagerProps> = ({
   collections,
   leads,
   onCreateCollection,
+  onUpdateCollection,
+  onDeleteCollection,
   onFilterByCollection
 }) => {
   const [isCreating, setIsCreating] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [state, setState] = useState('TX');
+  const [editing, setEditing] = useState<{ id: string; name: string; description: string; state: string } | null>(null);
+
+  const handleEditSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editing || !editing.name.trim()) return;
+    onUpdateCollection(editing.id, { name: editing.name.trim(), description: editing.description.trim(), state: editing.state });
+    setEditing(null);
+  };
+
+  const handleDelete = (col: DatabaseCollection, leadCount: number) => {
+    const detail = leadCount ? ` Its ${leadCount} lead${leadCount === 1 ? '' : 's'} will be kept, just removed from the collection.` : '';
+    if (window.confirm(`Delete collection "${col.name}"?${detail}`)) onDeleteCollection(col.id);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -116,6 +134,60 @@ export const CollectionsManager: React.FC<CollectionsManagerProps> = ({
         {collections.map(col => {
           const colLeads = leads.filter(l => l.collectionId === col.id);
 
+          if (editing?.id === col.id) {
+            return (
+              <form
+                key={col.id}
+                onSubmit={handleEditSubmit}
+                className="bg-neutral-900 border border-cyan-500/50 rounded-lg p-5 space-y-3 text-xs"
+              >
+                <div>
+                  <label className="block text-neutral-300 font-medium mb-1">Collection Name *</label>
+                  <input
+                    type="text"
+                    value={editing.name}
+                    onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+                    autoFocus
+                    className="w-full px-3 py-1.5 bg-neutral-950 border border-neutral-700 rounded text-white focus:outline-none focus:border-cyan-400"
+                  />
+                </div>
+                <div>
+                  <label className="block text-neutral-300 font-medium mb-1">Primary State</label>
+                  <select
+                    value={editing.state}
+                    onChange={(e) => setEditing({ ...editing, state: e.target.value })}
+                    className="w-full px-3 py-1.5 bg-neutral-950 border border-neutral-700 rounded text-white focus:outline-none focus:border-cyan-400"
+                  >
+                    {US_STATES.map(st => (
+                      <option key={st.code} value={st.code}>{st.name} ({st.code})</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-neutral-300 font-medium mb-1">Description & Acquisition Criteria</label>
+                  <textarea
+                    value={editing.description}
+                    onChange={(e) => setEditing({ ...editing, description: e.target.value })}
+                    rows={3}
+                    className="w-full px-3 py-1.5 bg-neutral-950 border border-neutral-700 rounded text-white focus:outline-none focus:border-cyan-400"
+                  />
+                </div>
+                <div className="flex justify-end gap-2 pt-1">
+                  <button type="button" onClick={() => setEditing(null)} className="px-3 py-1 bg-neutral-800 text-neutral-300 rounded cursor-pointer">
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={!editing.name.trim()}
+                    className="px-4 py-1 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold rounded cursor-pointer disabled:opacity-50"
+                  >
+                    Save Changes
+                  </button>
+                </div>
+              </form>
+            );
+          }
+
           return (
             <div
               key={col.id}
@@ -145,9 +217,29 @@ export const CollectionsManager: React.FC<CollectionsManagerProps> = ({
               </div>
 
               <div className="pt-3 border-t border-neutral-800 flex items-center justify-between text-xs">
-                <span className="text-[11px] text-neutral-500 font-mono">
-                  Updated {new Date(col.updatedAt).toLocaleDateString()}
-                </span>
+                <div className="flex items-center gap-2.5">
+                  <span className="text-[11px] text-neutral-500 font-mono">
+                    Updated {new Date(col.updatedAt).toLocaleDateString()}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setEditing({ id: col.id, name: col.name, description: col.description, state: col.targetStates[0] || 'TX' })}
+                    title="Edit collection"
+                    aria-label={`Edit ${col.name}`}
+                    className="p-1 text-neutral-500 hover:text-cyan-300 cursor-pointer"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(col, colLeads.length)}
+                    title="Delete collection"
+                    aria-label={`Delete ${col.name}`}
+                    className="p-1 text-neutral-500 hover:text-rose-400 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
                 <button
                   onClick={() => onFilterByCollection(col.id)}
                   className="text-cyan-400 hover:text-cyan-300 hover:underline flex items-center gap-1 font-medium cursor-pointer"

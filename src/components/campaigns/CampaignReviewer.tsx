@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { CampaignDraft, CampaignType, CampaignReviewStatus, RealEstateLead, PropertyListing } from '../../types';
 import { generateAICampaignDraft } from '../../services/groundedCampaignService';
+import { newId } from '../../services/apiClient';
 
 interface CampaignReviewerProps {
   campaigns: CampaignDraft[];
@@ -129,7 +130,7 @@ export const CampaignReviewer: React.FC<CampaignReviewerProps> = ({
     setIsGenerating(false);
 
     const newCampaign: CampaignDraft = {
-      id: `camp_${Date.now()}`,
+      id: newId(),
       title: result.title,
       campaignType: genType,
       targetAudience: genAudience,
