@@ -1,66 +1,59 @@
 <svg width="1200" height="420" viewBox="0 0 1200 420" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="bubbleFill" x1="180" y1="40" x2="670" y2="370" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#29C6FF"/>
-      <stop offset="0.35" stop-color="#1DA9F0"/>
-      <stop offset="1" stop-color="#0A62D5"/>
+    <linearGradient id="bubbleBlue" x1="120" y1="60" x2="760" y2="380" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2ACBFF"/>
+      <stop offset="0.45" stop-color="#1AA7ED"/>
+      <stop offset="1" stop-color="#0A69D8"/>
     </linearGradient>
-    <linearGradient id="wordFill" x1="280" y1="210" x2="990" y2="330" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#F7FBFF"/>
-      <stop offset="1" stop-color="#DCEFFF"/>
+    <linearGradient id="faceBlue" x1="280" y1="120" x2="560" y2="330" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#44D9FF"/>
+      <stop offset="1" stop-color="#1B9EEA"/>
     </linearGradient>
-    <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%">
-      <feDropShadow dx="0" dy="12" stdDeviation="8" flood-color="#0A3E9A" flood-opacity="0.35"/>
+    <filter id="cardShadow" x="-20%" y="-20%" width="150%" height="170%">
+      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#0B438C" flood-opacity="0.32"/>
     </filter>
-    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="160%">
-      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#19ABEE" flood-opacity="0.5"/>
+    <filter id="softShadow" x="-25%" y="-25%" width="150%" height="170%">
+      <feDropShadow dx="0" dy="7" stdDeviation="9" flood-color="#0EA4F5" flood-opacity="0.30"/>
     </filter>
   </defs>
 
-  <g filter="url(#softShadow)">
-    <path d="M173 73C106 73 58 119 58 179V230C58 290 106 336 173 336H310C333 336 351 357 351 380V385L335 420C323 440 343 463 367 456L444 431C455 427 467 425 479 425H540C611 425 671 396 708 345C744 295 760 239 739 188C715 129 663 86 599 80C573 77 548 74 522 74H173Z" fill="url(#bubbleFill)" stroke="#0C3D89" stroke-width="18"/>
+  <g filter="url(#cardShadow)">
+    <path d="M188 90C108 90 58 144 58 220C58 298 111 350 188 350H382C404 350 422 364 430 384L446 423C456 447 482 450 500 433L553 389C577 369 609 358 642 358H728C814 358 891 332 939 283C987 234 1004 171 972 122C939 71 871 46 800 52C760 56 719 64 679 64H188Z" fill="url(#bubbleBlue)" stroke="#0A3B86" stroke-width="18" stroke-linejoin="round"/>
 
-    <circle cx="230" cy="206" r="90" fill="#FFFFFF" opacity="0.16"/>
-    <circle cx="434" cy="206" r="90" fill="#FFFFFF" opacity="0.16"/>
-
-    <path d="M228 201C227 164 220 144 192 144C169 144 152 162 152 186C152 214 169 233 192 233C216 233 236 220 241 201H228Z" fill="#0C3D89" opacity="0.12"/>
-    <path d="M487 201C488 164 495 144 523 144C546 144 563 162 563 186C563 214 546 233 523 233C499 233 479 220 474 201H487Z" fill="#0C3D89" opacity="0.12"/>
-
-    <path d="M242 180C251 197 263 205 282 205C301 205 313 197 322 180" stroke="#0F295E" stroke-width="14" stroke-linecap="round"/>
-    <path d="M522 180C531 197 543 205 562 205C581 205 593 197 602 180" stroke="#0F295E" stroke-width="14" stroke-linecap="round"/>
-
-    <circle cx="235" cy="220" r="16" fill="#0B2358"/>
-    <circle cx="505" cy="220" r="16" fill="#0B2358"/>
-
-    <circle cx="232" cy="215" r="6" fill="#FFFFFF" opacity="0.95"/>
-    <circle cx="502" cy="215" r="6" fill="#FFFFFF" opacity="0.95"/>
-
-    <path d="M283 253C302 271 326 280 355 280C383 280 410 271 430 253" stroke="#0C3D89" stroke-width="18" stroke-linecap="round"/>
-
-    <path d="M352 155L366 189L401 194L375 219L382 255L352 237L322 255L329 219L303 194L338 189L352 155Z" fill="#F9D74A" stroke="#F4BA00" stroke-width="6" stroke-linejoin="round"/>
-
-    <path d="M145 99C131 84 110 76 88 81C92 98 98 112 108 123C114 130 126 134 139 131L145 99Z" fill="#F9D74A" stroke="#F4BA00" stroke-width="5" stroke-linejoin="round"/>
-    <path d="M680 126C692 116 708 113 724 119C723 138 716 153 703 164C693 171 679 171 670 164L680 126Z" fill="#F9D74A" stroke="#F4BA00" stroke-width="5" stroke-linejoin="round"/>
-
-    <path d="M675 82C684 70 700 63 716 68C713 83 706 95 695 104C685 112 671 112 662 105L675 82Z" fill="#FBCB3B" stroke="#F4BA00" stroke-width="5" stroke-linejoin="round"/>
-
-    <path d="M583 337C578 360 560 376 536 376C503 376 483 354 483 326C483 300 503 278 536 278C553 278 566 283 577 293C587 273 606 259 630 259C664 259 690 285 690 319C690 353 664 380 630 380C613 380 597 374 583 337Z" fill="#FF4A4A" opacity="0.2"/>
-
-    <g transform="translate(642 18)">
-      <circle cx="0" cy="0" r="48" fill="#F43F3F" stroke="#0C3D89" stroke-width="12"/>
-      <text x="0" y="18" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="52" font-weight="900" fill="#FFFFFF">1</text>
+    <g filter="url(#softShadow)">
+      <circle cx="410" cy="220" r="148" fill="url(#faceBlue)" stroke="#0F3A86" stroke-width="18"/>
+      <circle cx="260" cy="188" r="50" fill="#0F3A86" opacity="0.18"/>
+      <circle cx="570" cy="188" r="50" fill="#0F3A86" opacity="0.18"/>
     </g>
 
-    <g transform="translate(751 276)">
-      <path d="M30 0C43 -18 62 -17 73 0C82 15 80 33 67 50L34 80L0 50C-13 33 -15 15 -6 0C5 -17 24 -18 30 0Z" fill="#F55656" stroke="#BF2B2B" stroke-width="5" stroke-linejoin="round"/>
+    <circle cx="332" cy="222" r="41" fill="#FFFFFF"/>
+    <circle cx="490" cy="222" r="41" fill="#FFFFFF"/>
+    <circle cx="336" cy="224" r="18" fill="#0D2E68"/>
+    <circle cx="494" cy="224" r="18" fill="#0D2E68"/>
+    <circle cx="343" cy="213" r="7" fill="#FFFFFF"/>
+    <circle cx="501" cy="213" r="7" fill="#FFFFFF"/>
+
+    <path d="M287 286C324 325 372 344 410 344C448 344 495 325 531 286" stroke="#0F3A86" stroke-width="18" stroke-linecap="round"/>
+
+    <path d="M200 92L219 124L258 130L231 157L238 196L200 177L163 196L170 157L142 130L181 124L200 92Z" fill="#F7D54E" stroke="#E5AE1E" stroke-width="6" stroke-linejoin="round"/>
+    <path d="M776 138L791 173L830 179L799 206L807 246L776 229L744 246L752 206L721 179L760 173L776 138Z" fill="#F8D44C" stroke="#E7B11A" stroke-width="6" stroke-linejoin="round"/>
+    <path d="M960 214C933 176 933 128 965 99C998 70 1052 70 1085 101C1118 132 1117 179 1089 213L1019 284L960 214Z" fill="#F55F5F" stroke="#B82A2A" stroke-width="7" stroke-linejoin="round"/>
+
+    <g transform="translate(938 128)">
+      <circle cx="0" cy="0" r="52" fill="#F63E3E" stroke="#0A3B86" stroke-width="12"/>
+      <text x="0" y="18" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="56" font-weight="900" fill="#FFFFFF">1</text>
     </g>
 
-    <g transform="translate(120 325)">
-      <path d="M0 25C2 10 15 0 28 0C42 0 54 7 61 18C68 30 68 44 58 58L30 86L0 58C-10 44 -10 30 -3 18C4 7 16 0 28 0C42 0 54 7 61 18" fill="#F4BC2B" stroke="#E6A505" stroke-width="6" stroke-linejoin="round"/>
+    <g transform="translate(108 328)">
+      <path d="M0 42C0 20 18 2 40 2C58 2 73 13 81 29C89 46 88 68 74 86L42 118L9 86C-5 68 -6 46 2 29C10 13 25 2 42 2C60 2 76 13 84 29" fill="#F6C447" stroke="#E2A612" stroke-width="6" stroke-linejoin="round"/>
+    </g>
+
+    <g transform="translate(908 314)">
+      <path d="M60 0C79 -20 105 -19 120 0C136 20 134 51 110 79L60 125L10 79C-14 51 -16 20 0 0C15 -20 41 -20 60 0Z" fill="#F15B5B" stroke="#BF2C2C" stroke-width="6" stroke-linejoin="round"/>
     </g>
   </g>
 
-  <g filter="url(#shadow)">
-    <text x="365" y="285" font-family="Arial Black, Impact, sans-serif" font-size="164" font-weight="900" letter-spacing="-7" fill="url(#wordFill)" stroke="#0E3785" stroke-width="16" paint-order="stroke fill">Notifyem</text>
+  <g filter="url(#cardShadow)">
+    <text x="448" y="325" text-anchor="middle" font-family="Arial Black, Impact, sans-serif" font-size="182" font-weight="900" letter-spacing="-7" fill="#FFFFFF" stroke="#0B3E8F" stroke-width="18" paint-order="stroke fill">Notifyem</text>
   </g>
 </svg>
