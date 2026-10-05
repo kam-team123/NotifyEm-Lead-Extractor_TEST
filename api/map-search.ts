@@ -14,6 +14,8 @@ import { persistRecords, queryStoredRecords } from './_lib/store.js';
 //      is not configured, fails or returns nothing
 // Live results are upserted into Supabase so the next search works even if a live source is down.
 
+/** Largest search the Lead Finder offers; keep in sync with MAX_RADIUS_MILES in HeatmapLeadFinder.tsx. */
+const MAX_RADIUS_MILES = 50;
 const STORED_MAX_RADIUS = 50;
 const MAX_RECORDS = 1500;
 const REALTY_BUDGET_MS = 25000;
@@ -32,8 +34,10 @@ export const GET = handler(async request => {
   const url = new URL(request.url);
   const lat = numberParam(url, 'lat');
   const lng = numberParam(url, 'lng');
-  const radius = Math.max(0.25, Math.min(500, numberParam(url, 'radius', 5)));
+  const radius = Math.max(0.25, Math.min(MAX_RADIUS_MILES, numberParam(url, 'radius', 5)));
   if (!isValidLatLng(lat, lng)) throw new HttpError(400, 'lat/lng are out of range.');
+  // An explicit `sources` list (the Lead Finder's source toggle) is honoured as-is: no OSM fallback.
+  const explicitSources = url.searchParams.has('sources');
   const include = new Set((url.searchParams.get('sources') || 'stored,realty').split(','));
 
   const sb = getSupabase();
@@ -49,7 +53,7 @@ export const GET = handler(async request => {
   ]);
 
   // OSM only runs when asked for, or when Realtor.com gave us nothing (no key, error, or empty area).
-  const osmIsFallback = !include.has('osm') && !realty?.value?.records.length;
+  const osmIsFallback = !explicitSources && !include.has('osm') && !realty?.value?.records.length;
   const osm = include.has('osm') || osmIsFallback ? await timed(() => fetchOsmBuildings(lat, lng, radius, OSM_BUDGET_MS)) : null;
 
   // Supabase
@@ -118,6 +122,9 @@ export const GET = handler(async request => {
   const merged = new Map<string, MapRecord>();
   for (const record of stored?.value ?? []) {
     if (record.sourceSlug === 'county-parcels' || record.sourceSlug.startsWith('parcel-layer:')) continue;
+    // Saved copies of a live source follow the same toggle as the live source itself.
+    if (explicitSources && record.sourceSlug === 'osm' && !include.has('osm')) continue;
+    if (explicitSources && record.sourceSlug === 'realtor' && !include.has('realty')) continue;
     merged.set(record.id, record);
   }
   for (const record of live) merged.set(record.id, record);

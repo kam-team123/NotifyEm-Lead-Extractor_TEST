@@ -4,10 +4,10 @@ import { isValidLatLng } from './geo.js';
 
 // RealtyAPI (realtor.realtyapi.io) proxies Realtor.com: GET /search/bycoordinates returns up to 50 for-sale
 // listings per page around a point. The key is server-only (REALTYAPI_KEY) and sent as x-realtyapi-key.
-// Wide radii regularly time out upstream, so the radius is capped (override with REALTY_MAX_RADIUS_MILES).
+// Wide radii can time out upstream; lower the cap with REALTY_MAX_RADIUS_MILES if that happens often.
 
 const BASE_URL = process.env.REALTYAPI_BASE_URL || 'https://realtor.realtyapi.io';
-export const REALTY_MAX_RADIUS_MILES = Math.max(0.5, Math.min(25, Number(process.env.REALTY_MAX_RADIUS_MILES) || 5));
+export const REALTY_MAX_RADIUS_MILES = Math.max(0.5, Math.min(50, Number(process.env.REALTY_MAX_RADIUS_MILES) || 50));
 /** Each page costs credits; 4 pages = up to 200 listings per search. Override with REALTY_MAX_PAGES. */
 const MAX_PAGES = Math.max(1, Math.min(10, Number(process.env.REALTY_MAX_PAGES) || 4));
 const CACHE_TTL_MS = 15 * 60 * 1000;

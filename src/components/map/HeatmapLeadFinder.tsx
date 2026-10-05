@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { LeadCategory, RealEstateLead, PropertyListing, DatabaseCollection, SourceRunStatus } from '../../types';
 import { US_STATES } from '../../data/referenceData';
-import { geocodeAddress, MappedBuilding, searchMapRecords } from '../../services/openStreetMapService';
+import { geocodeAddress, LiveSource, MappedBuilding, searchMapRecords } from '../../services/openStreetMapService';
 import { DataSourcesPanel } from '../data/DataSourcesPanel';
 import { SidebarSection } from './SidebarSection';
 
@@ -23,6 +23,25 @@ const escapeHtml = (value: string) =>
 /** Marker colour per data source family. */
 const sourceColor = (slug: string) =>
   slug === 'realtor' ? '#f59e0b' : slug === 'osm' ? '#3b82f6' : slug === 'overture' ? '#8b5cf6' : '#06b6d4';
+
+/** Matches the server cap in api/map-search.ts. */
+const MAX_RADIUS_MILES = 50;
+
+const LIVE_SOURCE_OPTIONS: { value: LiveSource; label: string }[] = [
+  { value: 'realty', label: 'Realtor.com' },
+  { value: 'osm', label: 'OpenStreetMap' },
+  { value: 'both', label: 'Both' }
+];
+const LIVE_SOURCE_STORAGE_KEY = 'notifyem.leadFinder.liveSource';
+
+const readStoredLiveSource = (): LiveSource => {
+  try {
+    const saved = localStorage.getItem(LIVE_SOURCE_STORAGE_KEY);
+    return saved === 'osm' || saved === 'both' ? saved : 'realty';
+  } catch {
+    return 'realty';
+  }
+};
 
 const SOURCE_GROUPS = [
   { label: 'Realtor.com', slug: 'realtor', match: (slug: string) => slug === 'realtor' },
@@ -108,6 +127,16 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
     city: '',
     state: ''
   });
+
+  const [liveSource, setLiveSource] = useState<LiveSource>(readStoredLiveSource);
+  const chooseLiveSource = (value: LiveSource) => {
+    setLiveSource(value);
+    try {
+      localStorage.setItem(LIVE_SOURCE_STORAGE_KEY, value);
+    } catch {
+      // Storage blocked (private mode): the choice just isn't remembered.
+    }
+  };
 
   // Discovered candidates
   const [candidates, setCandidates] = useState<MappedBuilding[]>([]);
@@ -337,12 +366,18 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
   };
 
   // Update map layers when focus, candidates, leads, or heatmap state changes
+  // Recenter only when the search location or radius changes, so redrawing markers (new results,
+  // heatmap toggle, adding a lead) never moves the map away from what the user is looking at.
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
-
     const dynamicZoom = searchRadius > 80 ? 7 : searchRadius > 45 ? 8 : searchRadius > 20 ? 10 : searchRadius > 8 ? 11 : 13;
     map.setView([currentFocus.lat, currentFocus.lng], dynamicZoom);
+  }, [currentFocus, searchRadius]);
+
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
 
     // Clear previous markers
     if (markersLayerRef.current) {
@@ -468,7 +503,7 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
     setSearchError(null);
     setPropertyQuery('');
     try {
-      const result = await searchMapRecords(lat, lng, searchRadius);
+      const result = await searchMapRecords(lat, lng, searchRadius, liveSource);
       setCandidates(result.records);
       setSourceStatuses(result.sources);
       setLastSync(new Date().toISOString());
@@ -625,6 +660,26 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
               <MapPin className="w-3.5 h-3.5 text-cyan-400 absolute left-2.5 top-2.5" />
             </div>
 
+            <fieldset className="flex items-center gap-3 text-[11px] text-neutral-300">
+              <legend className="sr-only">Live data source</legend>
+              <span className="text-neutral-500">Source:</span>
+              {LIVE_SOURCE_OPTIONS.map(option => (
+                <label key={option.value} className="flex items-center gap-1 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="live-source"
+                    value={option.value}
+                    checked={liveSource === option.value}
+                    onChange={() => chooseLiveSource(option.value)}
+                    className="accent-cyan-400 cursor-pointer"
+                  />
+                  <span style={{ color: liveSource === option.value ? sourceColor(option.value === 'realty' ? 'realtor' : option.value === 'osm' ? 'osm' : 'other') : undefined }}>
+                    {option.label}
+                  </span>
+                </label>
+              ))}
+            </fieldset>
+
             <div className="flex items-center gap-2">
               <button
                 type="submit"
@@ -710,9 +765,9 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
                   id="sidebar-radius"
                   type="number"
                   min={1}
-                  max={500}
+                  max={MAX_RADIUS_MILES}
                   value={searchRadius}
-                  onChange={(e) => setSearchRadius(Math.max(1, Math.min(500, Number(e.target.value) || 1)))}
+                  onChange={(e) => setSearchRadius(Math.max(1, Math.min(MAX_RADIUS_MILES, Number(e.target.value) || 1)))}
                   className="w-14 px-2 py-0.5 bg-neutral-900 border border-neutral-700 rounded text-xs font-mono font-bold text-cyan-300 text-right focus:outline-none focus:border-cyan-400"
                 />
                 <span className="text-xs font-mono text-neutral-400">miles</span>
@@ -724,7 +779,7 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
               <input
                 type="range"
                 min={1}
-                max={500}
+                max={MAX_RADIUS_MILES}
                 step={1}
                 value={searchRadius}
                 onChange={(e) => setSearchRadius(Number(e.target.value))}
@@ -733,13 +788,13 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
               <div className="flex items-center justify-between text-[10px] font-mono text-neutral-500">
                 <span>1 mi</span>
                 <span className="text-cyan-400/80">Coverage: ~{Math.round(Math.PI * searchRadius * searchRadius).toLocaleString()} sq mi</span>
-                <span>500 mi</span>
+                <span>{MAX_RADIUS_MILES} mi</span>
               </div>
             </div>
 
             {/* Quick Radius Presets */}
             <div className="flex items-center gap-1 pt-1 overflow-x-auto">
-              {[1, 5, 10, 15, 25, 50, 100, 200, 300, 500].map(mi => (
+              {[1, 5, 10, 15, 25, 50].map(mi => (
                 <button
                   key={mi}
                   type="button"
@@ -1020,7 +1075,7 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
             <input
               type="range"
               min={1}
-              max={500}
+              max={MAX_RADIUS_MILES}
               step={1}
               value={searchRadius}
               onChange={(e) => setSearchRadius(Number(e.target.value))}
@@ -1029,7 +1084,7 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
             <div className="flex items-center justify-between text-[10px] font-mono text-neutral-500">
               <span>1 mi</span>
               <span className="text-cyan-400/90">~{Math.round(Math.PI * searchRadius * searchRadius).toLocaleString()} sq mi</span>
-              <span>500 mi</span>
+              <span>{MAX_RADIUS_MILES} mi</span>
             </div>
           </div>
 
@@ -1171,13 +1226,17 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
       </main>
 
       {qualifyingCandidate && (
-        <div
-          className="fixed inset-0 z-[1000] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
-          onMouseDown={event => {
-            if (event.target === event.currentTarget) setQualifyingCandidate(null);
-          }}
-        >
-          <section role="dialog" aria-modal="true" aria-labelledby="qualify-lead-title" className="w-full max-w-xl max-h-[90vh] overflow-y-auto bg-neutral-900 border border-neutral-700 rounded-lg shadow-2xl">
+        // Side panel instead of a full-screen modal: the map stays visible and usable behind it.
+        <div className="fixed top-[62px] right-0 bottom-0 z-[1000] w-full max-w-md p-3 flex pointer-events-none">
+          <section
+            role="dialog"
+            aria-modal="false"
+            aria-labelledby="qualify-lead-title"
+            onKeyDown={event => {
+              if (event.key === 'Escape') setQualifyingCandidate(null);
+            }}
+            className="pointer-events-auto w-full max-h-full overflow-y-auto bg-neutral-900/95 backdrop-blur-md border border-neutral-700 rounded-lg shadow-2xl"
+          >
             <div className="p-4 border-b border-neutral-800 flex items-start justify-between gap-3">
               <div>
                 <h2 id="qualify-lead-title" className="text-sm font-bold text-white">Qualify property lead</h2>

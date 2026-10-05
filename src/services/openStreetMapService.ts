@@ -20,7 +20,12 @@ export async function geocodeAddress(query: string): Promise<GeocodingResult | n
   }
 }
 
-export async function searchMapRecords(lat: number, lng: number, radiusMiles: number): Promise<MapSearchResponse> {
-  const params = new URLSearchParams({ lat: lat.toFixed(6), lng: lng.toFixed(6), radius: String(radiusMiles) });
+/** Which live source the Lead Finder searches; saved Supabase records are always included. */
+export type LiveSource = 'realty' | 'osm' | 'both';
+
+const SOURCE_PARAM: Record<LiveSource, string> = { realty: 'stored,realty', osm: 'stored,osm', both: 'stored,realty,osm' };
+
+export async function searchMapRecords(lat: number, lng: number, radiusMiles: number, source: LiveSource): Promise<MapSearchResponse> {
+  const params = new URLSearchParams({ lat: lat.toFixed(6), lng: lng.toFixed(6), radius: String(radiusMiles), sources: SOURCE_PARAM[source] });
   return apiGet<MapSearchResponse>(`/api/map-search?${params}`, 65000);
 }
