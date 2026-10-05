@@ -190,6 +190,16 @@ export interface MapRecord {
   phone?: string;
   email?: string;
   website?: string;
+  /** Listing details (Realtor.com via RealtyAPI, MLS). */
+  listPrice?: number;
+  estimatedValue?: number;
+  beds?: number;
+  baths?: number;
+  sqft?: number;
+  listingStatus?: string;
+  photoUrl?: string;
+  agentName?: string;
+  agentOffice?: string;
   sourceUrl: string;
   retrievedAt: string;
   /** true when served from Supabase rather than fetched live during this search. */

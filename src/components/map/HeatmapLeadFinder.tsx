@@ -22,7 +22,43 @@ const escapeHtml = (value: string) =>
 
 /** Marker colour per data source family. */
 const sourceColor = (slug: string) =>
-  slug === 'osm' ? '#3b82f6' : slug === 'overture' ? '#8b5cf6' : '#06b6d4';
+  slug === 'realtor' ? '#f59e0b' : slug === 'osm' ? '#3b82f6' : slug === 'overture' ? '#8b5cf6' : '#06b6d4';
+
+const SOURCE_GROUPS = [
+  { label: 'Realtor.com', slug: 'realtor', match: (slug: string) => slug === 'realtor' },
+  { label: 'OSM', slug: 'osm', match: (slug: string) => slug === 'osm' },
+  { label: 'Overture', slug: 'overture', match: (slug: string) => slug === 'overture' },
+  { label: 'Other', slug: 'other', match: (slug: string) => !['realtor', 'osm', 'overture'].includes(slug) }
+];
+
+/** Lead readiness by which contact details the record carries; drives marker colours and the legend. */
+const CONTACT_TIERS = [
+  { key: 'full', label: 'Fully Enriched', detail: 'Address + Phone + Email', color: '#10B981', meaning: 'Outreach ready via any channel' },
+  { key: 'phone', label: 'High Contactability', detail: 'Address + Phone', color: '#06B6D4', meaning: 'Calling / SMS ready' },
+  { key: 'email', label: 'Moderate Contactability', detail: 'Address + Email', color: '#F59E0B', meaning: 'Email campaign / direct mail ready' },
+  { key: 'address', label: 'Low Contactability', detail: 'Address only', color: '#F97316', meaning: 'Needs skip-tracing or enrichment' },
+  { key: 'missing', label: 'Unverified / Missing', detail: 'Incomplete address', color: '#6B7280', meaning: 'Logged but not actionable yet' }
+] as const;
+
+type ContactTier = (typeof CONTACT_TIERS)[number];
+
+const contactTier = (c: MappedBuilding): ContactTier => {
+  const hasAddress = Boolean(c.address) && c.address !== 'Unknown address' && !c.address.startsWith('Parcel ');
+  const hasPhone = Boolean(c.phone?.trim());
+  const hasEmail = Boolean(c.email?.trim());
+  const key = !hasAddress ? 'missing' : hasPhone && hasEmail ? 'full' : hasPhone ? 'phone' : hasEmail ? 'email' : 'address';
+  return CONTACT_TIERS.find(t => t.key === key)!;
+};
+
+const formatPrice = (value: number) => `$${Math.round(value).toLocaleString()}`;
+
+/** "4 bd · 2 ba · 1,560 sqft" from whichever listing fields the source supplied. */
+const listingFacts = (c: MappedBuilding) =>
+  [
+    c.beds !== undefined && `${c.beds} bd`,
+    c.baths !== undefined && `${c.baths} ba`,
+    c.sqft !== undefined && `${c.sqft.toLocaleString()} sqft`
+  ].filter(Boolean).join(' · ');
 
 interface HeatmapLeadFinderProps {
   leads: RealEstateLead[];
@@ -239,7 +275,10 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
   /** Popup shown when a property marker is clicked: pick between the source record and qualifying it as a lead. */
   const buildMarkerPopup = (candidate: MappedBuilding): HTMLElement => {
     const locality = [candidate.city, candidate.state, candidate.postalCode].filter(Boolean).join(', ');
+    const facts = listingFacts(candidate);
+    const tier = contactTier(candidate);
     const contactRows = [
+      candidate.agentName && ['Agent', escapeHtml([candidate.agentName, candidate.agentOffice].filter(Boolean).join(' · '))],
       candidate.name && ['Name', escapeHtml(candidate.name)],
       candidate.ownerName && ['Owner', escapeHtml(candidate.ownerName)],
       candidate.phone && ['Phone', `<a href="tel:${escapeHtml(candidate.phone)}" class="text-cyan-300 hover:underline">${escapeHtml(candidate.phone)}</a>`],
@@ -253,11 +292,25 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
     const root = document.createElement('div');
     root.className = 'space-y-2';
     root.innerHTML = `
+      ${candidate.photoUrl ? `<img src="${escapeHtml(candidate.photoUrl)}" alt="" loading="lazy" class="w-full h-28 object-cover rounded" />` : ''}
       <div>
+        ${
+          candidate.listPrice !== undefined
+            ? `<div class="text-[14px] font-bold text-amber-300">${formatPrice(candidate.listPrice)}${
+                candidate.listingStatus ? ` <span class="text-[10px] font-medium text-neutral-400">${escapeHtml(candidate.listingStatus)}</span>` : ''
+              }</div>`
+            : ''
+        }
+        ${facts ? `<div class="text-[11px] text-neutral-300">${escapeHtml(facts)}</div>` : ''}
         <div class="text-[13px] font-semibold text-neutral-100 leading-snug">${escapeHtml(candidate.address)}</div>
         <div class="text-[11px] text-neutral-400">${escapeHtml(locality || 'City/state not supplied by source')}</div>
         <div class="mt-1 text-[11px]"><span class="text-cyan-300/90">${escapeHtml(candidate.category)}</span>
           <span class="text-neutral-500"> · ${escapeHtml(candidate.sourceLabel)}</span></div>
+        <div class="mt-1 flex items-center gap-1.5 text-[11px]" title="${escapeHtml(tier.meaning)}">
+          <span style="background-color:${tier.color}" class="w-2 h-2 rounded-full shrink-0"></span>
+          <span style="color:${tier.color}" class="font-medium">${tier.label}</span>
+          <span class="text-neutral-500">· ${tier.meaning}</span>
+        </div>
       </div>
       ${
         contactRows.length
@@ -341,7 +394,7 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
       if (hasSearchLocation) {
         const centerIcon = L.divIcon({
           className: 'custom-pin',
-          html: '<div style="background-color: #06b6d4; width: 14px; height: 14px; border-radius: 50%; border: 3px solid #000; box-shadow: 0 0 14px #06b6d4;"></div>',
+          html: '<div style="background-color: #fff; width: 14px; height: 14px; border-radius: 50%; border: 3px solid #000; box-shadow: 0 0 0 2px #06b6d4, 0 0 14px #06b6d4;"></div>',
           iconSize: [14, 14],
           iconAnchor: [7, 7]
         });
@@ -350,10 +403,11 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
           .addTo(markersLayerRef.current);
       }
 
-      // Discovered candidates markers - Electric Blue
+      // Discovered candidates markers, coloured by contact completeness
       markersByIdRef.current.clear();
       candidates.forEach(candidate => {
-        const color = sourceColor(candidate.sourceSlug);
+        const tier = contactTier(candidate);
+        const color = tier.color;
         const candIcon = L.divIcon({
           className: 'candidate-pin',
           html: `<div style="background-color: ${color}; width: 11px; height: 11px; border-radius: 50%; border: 2px solid #020617; box-shadow: 0 0 6px ${color}99; cursor: pointer;"></div>`,
@@ -366,7 +420,8 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
         marker.bindPopup(() => buildMarkerPopup(candidate), { className: 'leaflet-popup-dark', minWidth: 240, maxWidth: 280 });
         const nameLine = candidate.name ? `<br/>${escapeHtml(candidate.name)}` : '';
         const ownerLine = candidate.ownerName ? `<br/>Owner: ${escapeHtml(candidate.ownerName)}` : '';
-        marker.bindTooltip(`${escapeHtml(candidate.address)}${nameLine}${ownerLine}<br/>${escapeHtml(candidate.sourceLabel)}`, {
+        const tierLine = `<br/><span style="color:${color}">●</span> ${tier.label}`;
+        marker.bindTooltip(`${escapeHtml(candidate.address)}${nameLine}${ownerLine}<br/>${escapeHtml(candidate.sourceLabel)}${tierLine}`, {
           className: 'leaflet-tooltip-dark'
         });
         marker.addTo(markersLayerRef.current!);
@@ -437,13 +492,15 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
   const openQualificationForm = (candidate: MappedBuilding) => {
     setQualifyingCandidate(candidate);
     setQualificationError(null);
+    // Realtor.com listings name the listing agent, which is the contact we can actually reach.
+    const [agentFirst = '', ...agentRest] = (!candidate.ownerName && candidate.agentName ? candidate.agentName : '').split(/\s+/);
     setQualificationForm({
-      firstName: '',
-      lastName: '',
+      firstName: agentFirst,
+      lastName: agentRest.join(' '),
       email: candidate.email || '',
       phone: candidate.phone || '',
-      company: candidate.ownerName || candidate.name || '',
-      role: candidate.ownerName ? 'Property Owner' : '',
+      company: candidate.ownerName || candidate.name || candidate.agentOffice || '',
+      role: candidate.ownerName ? 'Property Owner' : candidate.agentName ? 'Listing Agent' : '',
       category: '',
       street: candidate.address,
       city: candidate.city,
@@ -480,6 +537,8 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
       leadSource: 'Lead Finder Discovery',
       notes: [
         candidate.sourceLabel,
+        candidate.listPrice !== undefined ? `List price: ${formatPrice(candidate.listPrice)}${candidate.listingStatus ? ` (${candidate.listingStatus})` : ''}` : '',
+        listingFacts(candidate),
         candidate.parcelId ? `Parcel ID: ${candidate.parcelId}` : '',
         candidate.website ? `Website: ${candidate.website}` : ''
       ].filter(Boolean).join(' · '),
@@ -532,11 +591,11 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
             <h1 className="text-base font-semibold text-white tracking-tight">Property Map</h1>
             <div className="flex items-center gap-1.5 text-xs text-neutral-400">
               <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_#06b6d4]" />
-              <span className="text-cyan-300 font-mono text-[11px]">OpenStreetMap</span>
+              <span className="text-amber-300 font-mono text-[11px]">Realtor.com</span>
             </div>
           </div>
           <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
-            Searches OpenStreetMap buildings and property records already saved in Supabase.
+            Searches live Realtor.com for-sale listings (RealtyAPI) and property records already saved in Supabase. Falls back to OpenStreetMap when no listings come back.
           </p>
         </div>
 
@@ -784,6 +843,18 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
                       <div className="text-[11px] text-neutral-400 mt-0.5">
                         {[candidate.city, candidate.state, candidate.postalCode].filter(Boolean).join(', ') || 'City/state not supplied by source'}
                       </div>
+                      {candidate.listPrice !== undefined && (
+                        <div className="text-xs font-bold text-amber-300 mt-0.5">
+                          {formatPrice(candidate.listPrice)}
+                          {candidate.listingStatus && <span className="ml-1.5 text-[10px] font-medium text-neutral-400">{candidate.listingStatus}</span>}
+                        </div>
+                      )}
+                      {listingFacts(candidate) && <div className="text-[11px] text-neutral-300 mt-0.5">{listingFacts(candidate)}</div>}
+                      {candidate.agentName && (
+                        <div className="text-[11px] text-neutral-300 mt-0.5">
+                          Agent: {[candidate.agentName, candidate.agentOffice].filter(Boolean).join(' · ')}
+                        </div>
+                      )}
                       {candidate.name && <div className="text-[11px] text-neutral-200 mt-0.5">{candidate.name}</div>}
                       {candidate.ownerName && (
                         <div className="text-[11px] text-neutral-300 mt-0.5">Owner: {candidate.ownerName}</div>
@@ -798,6 +869,12 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
 
                   {/* Clean unboxed metadata per Frontend Constitution */}
                   <div className="flex items-center gap-2 text-[11px] text-neutral-400 mt-2">
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{ backgroundColor: contactTier(candidate).color }}
+                      title={`${contactTier(candidate).label}: ${contactTier(candidate).meaning}`}
+                      aria-label={contactTier(candidate).label}
+                    />
                     <span className="text-cyan-300/90 font-medium truncate max-w-[110px]">{candidate.category}</span>
                     <span aria-hidden="true">·</span>
                     <span style={{ color: sourceColor(candidate.sourceSlug) }} className="truncate">{candidate.sourceLabel}</span>
@@ -959,19 +1036,29 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
           {/* Entity Legend */}
           <div className="space-y-1.5 text-[11px] text-neutral-300 pt-1 border-t border-neutral-800">
             <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-cyan-400 border border-neutral-950 shadow-[0_0_6px_#06b6d4] shrink-0" />
+              <span className="w-3 h-3 rounded-full bg-white border border-neutral-950 shadow-[0_0_0_2px_#06b6d4] shrink-0" />
               <span>{hasSearchLocation ? currentFocus.label : 'No location selected'}</span>
             </div>
-            {[
-              { label: 'OpenStreetMap', color: sourceColor('osm'), match: (slug: string) => slug === 'osm' },
-              { label: 'Overture', color: sourceColor('overture'), match: (slug: string) => slug === 'overture' },
-              { label: 'MLS / Kaggle / other', color: sourceColor('other'), match: (slug: string) => !['osm', 'overture'].includes(slug) }
-            ].map(item => (
-              <div key={item.label} className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: item.color, boxShadow: `0 0 6px ${item.color}` }} />
-                <span>{item.label} ({candidates.filter(c => item.match(c.sourceSlug)).length})</span>
+            {CONTACT_TIERS.map(tier => (
+              <div key={tier.key} className="flex items-center gap-2" title={tier.meaning}>
+                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: tier.color, boxShadow: `0 0 6px ${tier.color}` }} />
+                <span>{tier.label}</span>
+                <span className="text-neutral-500 truncate">{tier.detail}</span>
+                <span className="ml-auto font-mono text-neutral-400">{candidates.filter(c => contactTier(c).key === tier.key).length}</span>
               </div>
             ))}
+            {candidates.length > 0 && (
+              <div className="flex flex-wrap gap-x-3 gap-y-0.5 pt-1 text-[10px] text-neutral-500">
+                <span>Sources:</span>
+                {SOURCE_GROUPS.map(group => ({ ...group, count: candidates.filter(c => group.match(c.sourceSlug)).length }))
+                  .filter(group => group.count)
+                  .map(group => (
+                    <span key={group.label} style={{ color: sourceColor(group.slug) }}>
+                      {group.label} {group.count}
+                    </span>
+                  ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -1041,7 +1128,7 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
               <ol className="mt-4 space-y-2 text-[12px]">
                 {[
                   { key: 'locating', label: 'Finding the location' },
-                  { key: 'records', label: 'Loading Supabase + OpenStreetMap records' }
+                  { key: 'records', label: 'Loading Realtor.com listings + saved records' }
                 ].map((step, index) => {
                   const done = searchStage === 'records' && step.key === 'locating';
                   const active = searchStage === step.key;

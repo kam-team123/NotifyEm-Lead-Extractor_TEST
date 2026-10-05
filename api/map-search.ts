@@ -2,17 +2,22 @@ import type { MapRecord, MapSearchResponse, SourceRunStatus } from '../src/types
 import { handler, HttpError, json, numberParam } from './_lib/http.js';
 import { bboxAround, distanceMiles, isValidLatLng } from './_lib/geo.js';
 import { fetchOsmBuildings, OSM_MAX_RADIUS_MILES } from './_lib/osm.js';
+import { fetchRealtyListings, REALTY_MAX_RADIUS_MILES, realtyConfigured } from './_lib/realty.js';
 import { getSupabase } from './_lib/supabase.js';
 import { persistRecords, queryStoredRecords } from './_lib/store.js';
 
-// GET /api/map-search?lat=30.27&lng=-97.74&radius=5
-// Combines, in parallel:
+// GET /api/map-search?lat=30.27&lng=-97.74&radius=5[&sources=stored,realty,osm]
+// Combines:
 //   1. properties already stored in Supabase (earlier searches, Overture/Kaggle imports, MLS)
-//   2. live OpenStreetMap buildings with addresses (Overpass, mirrors)
+//   2. live Realtor.com for-sale listings via RealtyAPI (primary live source, needs REALTYAPI_KEY)
+//   3. live OpenStreetMap buildings (Overpass) — when requested, or as a fallback when RealtyAPI
+//      is not configured, fails or returns nothing
 // Live results are upserted into Supabase so the next search works even if a live source is down.
 
 const STORED_MAX_RADIUS = 50;
 const MAX_RECORDS = 1500;
+const REALTY_BUDGET_MS = 25000;
+const OSM_BUDGET_MS = 30000;
 
 async function timed<T>(fn: () => Promise<T>): Promise<{ value?: T; error?: string; ms: number }> {
   const start = Date.now();
@@ -29,17 +34,23 @@ export const GET = handler(async request => {
   const lng = numberParam(url, 'lng');
   const radius = Math.max(0.25, Math.min(500, numberParam(url, 'radius', 5)));
   if (!isValidLatLng(lat, lng)) throw new HttpError(400, 'lat/lng are out of range.');
-  const include = new Set((url.searchParams.get('sources') || 'stored,osm').split(','));
+  const include = new Set((url.searchParams.get('sources') || 'stored,realty').split(','));
 
   const sb = getSupabase();
   const statuses: SourceRunStatus[] = [];
 
-  const [stored, osm] = await Promise.all([
+  const [stored, realty] = await Promise.all([
     include.has('stored') && sb
       ? timed(() => queryStoredRecords(sb, bboxAround(lat, lng, Math.min(radius, STORED_MAX_RADIUS)), MAX_RECORDS))
       : Promise.resolve(null),
-    include.has('osm') ? timed(() => fetchOsmBuildings(lat, lng, radius, 40000)) : Promise.resolve(null)
+    include.has('realty') && realtyConfigured()
+      ? timed(() => fetchRealtyListings(lat, lng, radius, REALTY_BUDGET_MS))
+      : Promise.resolve(null)
   ]);
+
+  // OSM only runs when asked for, or when Realtor.com gave us nothing (no key, error, or empty area).
+  const osmIsFallback = !include.has('osm') && !realty?.value?.records.length;
+  const osm = include.has('osm') || osmIsFallback ? await timed(() => fetchOsmBuildings(lat, lng, radius, OSM_BUDGET_MS)) : null;
 
   // Supabase
   if (!sb) {
@@ -59,27 +70,51 @@ export const GET = handler(async request => {
     );
   }
 
-  // OpenStreetMap
-  if (osm) {
-    statuses.push(
-      osm.error
-        ? { slug: 'osm', label: 'OpenStreetMap', status: 'error', count: 0, message: osm.error, ms: osm.ms }
-        : {
-            slug: 'osm',
-            label: 'OpenStreetMap',
-            status: osm.value!.records.length ? 'ok' : 'empty',
-            count: osm.value!.records.length,
-            message: osm.value!.fellBack
-              ? `OSM was busy, so the live lookup fell back to ${osm.value!.radiusMiles} mi around the center. Retry for the full ${Math.min(radius, OSM_MAX_RADIUS_MILES)} mi.`
-              : radius > OSM_MAX_RADIUS_MILES
-                ? `Live OSM lookup limited to ${OSM_MAX_RADIUS_MILES} mi around the center.`
-                : undefined,
-            ms: osm.ms
-          }
-    );
+  // RealtyAPI (Realtor.com)
+  if (include.has('realty')) {
+    if (!realtyConfigured()) {
+      statuses.push({ slug: 'realtor', label: 'Realtor.com', status: 'skipped', count: 0, message: 'REALTYAPI_KEY is not set on the server.' });
+    } else if (realty?.error) {
+      statuses.push({ slug: 'realtor', label: 'Realtor.com', status: 'error', count: 0, message: realty.error, ms: realty.ms });
+    } else if (realty?.value) {
+      const { records: listings, total, truncated } = realty.value;
+      const notes = [
+        radius > REALTY_MAX_RADIUS_MILES ? `For-sale listings limited to ${REALTY_MAX_RADIUS_MILES} mi around the center.` : '',
+        truncated ? `Showing ${listings.length} of ${total} listings.` : ''
+      ].filter(Boolean);
+      statuses.push({
+        slug: 'realtor',
+        label: 'Realtor.com',
+        status: listings.length ? 'ok' : 'empty',
+        count: listings.length,
+        message: notes.join(' ') || undefined,
+        ms: realty.ms
+      });
+    }
   }
 
-  const live: MapRecord[] = osm?.value?.records ?? [];
+  // OpenStreetMap
+  if (osm) {
+    const notes = [
+      osmIsFallback ? 'Fallback: Realtor.com returned no listings.' : '',
+      osm.error ?? '',
+      osm.value?.fellBack
+        ? `OSM was busy, so the live lookup fell back to ${osm.value.radiusMiles} mi around the center. Retry for the full ${Math.min(radius, OSM_MAX_RADIUS_MILES)} mi.`
+        : osm.value && radius > OSM_MAX_RADIUS_MILES
+          ? `Live OSM lookup limited to ${OSM_MAX_RADIUS_MILES} mi around the center.`
+          : ''
+    ].filter(Boolean);
+    statuses.push({
+      slug: 'osm',
+      label: 'OpenStreetMap',
+      status: osm.error ? 'error' : osm.value!.records.length ? 'ok' : 'empty',
+      count: osm.value?.records.length ?? 0,
+      message: notes.join(' ') || undefined,
+      ms: osm.ms
+    });
+  }
+
+  const live: MapRecord[] = [...(realty?.value?.records ?? []), ...(osm?.value?.records ?? [])];
   const merged = new Map<string, MapRecord>();
   for (const record of stored?.value ?? []) {
     if (record.sourceSlug === 'county-parcels' || record.sourceSlug.startsWith('parcel-layer:')) continue;

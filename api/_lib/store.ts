@@ -33,6 +33,9 @@ interface StoredPropertyRow {
 const metaString = (metadata: Record<string, unknown> | null, key: string) =>
   typeof metadata?.[key] === 'string' && metadata[key] ? (metadata[key] as string) : undefined;
 
+const metaNumber = (metadata: Record<string, unknown> | null, key: string) =>
+  typeof metadata?.[key] === 'number' && Number.isFinite(metadata[key]) ? (metadata[key] as number) : undefined;
+
 /** Properties already in Supabase (from earlier searches, Overture/Kaggle imports, MLS syncs) inside a bbox. */
 export async function queryStoredRecords(sb: SupabaseClient, box: BBox, limit: number): Promise<MapRecord[]> {
   const { data, error } = await sb
@@ -71,6 +74,15 @@ export async function queryStoredRecords(sb: SupabaseClient, box: BBox, limit: n
         phone: metaString(row.metadata, 'phone'),
         email: metaString(row.metadata, 'email'),
         website: metaString(row.metadata, 'website'),
+        listPrice: metaNumber(row.metadata, 'listPrice'),
+        estimatedValue: metaNumber(row.metadata, 'estimatedValue'),
+        beds: metaNumber(row.metadata, 'beds'),
+        baths: metaNumber(row.metadata, 'baths'),
+        sqft: metaNumber(row.metadata, 'sqft'),
+        listingStatus: metaString(row.metadata, 'listingStatus'),
+        photoUrl: metaString(row.metadata, 'photoUrl'),
+        agentName: metaString(row.metadata, 'agentName'),
+        agentOffice: metaString(row.metadata, 'agentOffice'),
         sourceUrl: row.source_url || '',
         retrievedAt: row.updated_at,
         fromStore: true,
@@ -112,7 +124,22 @@ export async function persistRecords(sb: SupabaseClient, records: MapRecord[]): 
       source_url: r.sourceUrl,
       verification_status: 'source_record',
       metadata: Object.fromEntries(
-        Object.entries({ lotAcres: r.lotAcres, name: r.name, phone: r.phone, email: r.email, website: r.website }).filter(([, v]) => v)
+        Object.entries({
+          lotAcres: r.lotAcres,
+          name: r.name,
+          phone: r.phone,
+          email: r.email,
+          website: r.website,
+          listPrice: r.listPrice,
+          estimatedValue: r.estimatedValue,
+          beds: r.beds,
+          baths: r.baths,
+          sqft: r.sqft,
+          listingStatus: r.listingStatus,
+          photoUrl: r.photoUrl,
+          agentName: r.agentName,
+          agentOffice: r.agentOffice
+        }).filter(([, v]) => v)
       ),
       updated_at: new Date().toISOString()
     }));
