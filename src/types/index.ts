@@ -255,6 +255,9 @@ export interface DataSourceStatus {
 export interface SourcesResponse {
   supabaseConfigured: boolean;
   supabaseError?: string;
+  realty: {
+    configured: boolean;
+  };
   mls: {
     configured: boolean;
     name: string;

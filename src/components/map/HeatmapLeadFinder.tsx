@@ -16,6 +16,7 @@ import { US_STATES } from '../../data/referenceData';
 import { geocodeAddress, LiveSource, MappedBuilding, searchMapRecords } from '../../services/openStreetMapService';
 import { DataSourcesPanel } from '../data/DataSourcesPanel';
 import { SidebarSection } from './SidebarSection';
+import { HowToStartButton, HowToStartCard } from './HowToStartCard';
 
 const escapeHtml = (value: string) =>
   value.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!);
@@ -33,6 +34,7 @@ const LIVE_SOURCE_OPTIONS: { value: LiveSource; label: string }[] = [
   { value: 'both', label: 'Both' }
 ];
 const LIVE_SOURCE_STORAGE_KEY = 'notifyem.leadFinder.liveSource';
+const HOW_TO_STORAGE_KEY = 'notifyem.leadFinder.howToStart';
 
 const readStoredLiveSource = (): LiveSource => {
   try {
@@ -135,6 +137,23 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
       localStorage.setItem(LIVE_SOURCE_STORAGE_KEY, value);
     } catch {
       // Storage blocked (private mode): the choice just isn't remembered.
+    }
+  };
+
+  // "How to start" guide: opens on a first visit, stays closed once dismissed.
+  const [showHowTo, setShowHowTo] = useState(() => {
+    try {
+      return localStorage.getItem(HOW_TO_STORAGE_KEY) !== 'dismissed';
+    } catch {
+      return true;
+    }
+  });
+  const closeHowTo = () => {
+    setShowHowTo(false);
+    try {
+      localStorage.setItem(HOW_TO_STORAGE_KEY, 'dismissed');
+    } catch {
+      // Storage blocked: the guide just shows again next visit.
     }
   };
 
@@ -1013,6 +1032,7 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
               <Layers className="w-3.5 h-3.5 text-cyan-400" />
               <span>Map Layer Controls</span>
             </div>
+            <HowToStartButton onClick={() => setShowHowTo(true)} />
             <button
               onClick={() => {
                 if (mapInstanceRef.current) {
@@ -1117,13 +1137,16 @@ export const HeatmapLeadFinder: React.FC<HeatmapLeadFinderProps> = ({
           </div>
         </div>
 
+        {showHowTo && <HowToStartCard onClose={closeHowTo} />}
+
         {/* State Quick Switcher Bar with Regional Filter */}
         <div className="absolute bottom-4 left-4 z-[500] bg-neutral-950/95 backdrop-blur-md border border-neutral-800 rounded-md p-2.5 text-xs flex flex-col gap-2 shadow-2xl max-w-[calc(100vw-450px)]">
           <div className="flex items-center justify-between gap-3 border-b border-neutral-800 pb-1.5">
             <span className="text-neutral-400 font-semibold text-[11px] uppercase tracking-wider">
               US states ({displayedStates.length}):
             </span>
-            <div className="flex items-center gap-1">
+            <HowToStartButton onClick={() => setShowHowTo(true)} />
+            <div className="flex items-center gap-1 ml-auto">
               {(['ALL', 'Northeast', 'South', 'Midwest', 'West'] as const).map(reg => (
                 <button
                   key={reg}

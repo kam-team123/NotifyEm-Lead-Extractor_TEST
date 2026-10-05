@@ -33,6 +33,7 @@ The browser never calls Overpass or Supabase directly. Overpass rejects anonymou
 | Source | How it works in the app |
 | --- | --- |
 | OpenStreetMap | Address-tagged buildings, live (≤ 3 mi radius), cached into Supabase. |
+| Realtor.com | Live for-sale search in the Lead Finder through RealtyAPI. Set the server-only `REALTYAPI_KEY`; the API uses paid credits and its terms apply. |
 | Overture Maps | `npm i --no-save @duckdb/node-api`, then `npm run import:overture -- --place "Austin, TX" --radius 5`. |
 | Kaggle | Listings page → *Import Kaggle CSV* (streams large files, filters by state). Stored as historical snapshots. |
 | RPR | No public API exists; the panel links to narrpr.com. |

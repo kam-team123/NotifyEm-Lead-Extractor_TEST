@@ -14,6 +14,11 @@ const OPEN_KEY = 'notifyem.dataSourcesOpen';
 
 const DESCRIPTIONS: Record<string, { type: string; coverage: string; detail: string }> = {
   osm: { type: 'Open map data', coverage: 'Global', detail: 'Address-tagged buildings near each search, fetched live and cached in Supabase.' },
+  realtor: {
+    type: 'Live listing search · paid API',
+    coverage: 'US listing coverage',
+    detail: 'For-sale listings searched live in the Lead Finder through RealtyAPI. Requires a RealtyAPI key and paid credits; results are cached in Supabase.'
+  },
   overture: {
     type: 'Open base map data',
     coverage: 'Global',
@@ -28,8 +33,13 @@ const DESCRIPTIONS: Record<string, { type: string; coverage: string; detail: str
   mls: { type: 'Licensed listing feed', coverage: 'Your MLS', detail: 'Active and pending listings from a RESO Web API feed, synced daily.' }
 };
 
-function badge(source: DataSourceStatus, mls: SourcesResponse['mls']): { text: string; tone: string } {
+function badge(source: DataSourceStatus, mls: SourcesResponse['mls'], realtyConfigured: boolean): { text: string; tone: string } {
   if (source.slug === 'rpr') return { text: 'Members only', tone: 'neutral' };
+  if (source.slug === 'realtor') {
+    return realtyConfigured
+      ? { text: 'Live search ready', tone: 'ok' }
+      : { text: 'API key needed', tone: 'neutral' };
+  }
   if (source.slug === 'mls') {
     if (!mls.configured) return { text: 'Not configured', tone: 'neutral' };
     if (source.lastError) return { text: 'Sync error', tone: 'error' };
@@ -103,7 +113,7 @@ export const DataSourcesPanel: React.FC<Props> = ({ refreshKey, onOpenListings }
           <div className="w-2 h-2 shrink-0 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.6)]" />
           <div className="min-w-0">
             <div className="text-[11px] font-semibold uppercase tracking-wider text-neutral-200 group-hover:text-cyan-300">
-              Free Real Estate Data Sources
+              Real Estate Data Sources
             </div>
             {!open && (
               <div className="mt-0.5 text-[10px] text-neutral-500 truncate">
@@ -137,7 +147,7 @@ export const DataSourcesPanel: React.FC<Props> = ({ refreshKey, onOpenListings }
       <div className="space-y-2">
         {sources.map(source => {
           const info = DESCRIPTIONS[source.slug];
-          const b = badge(source, data!.mls);
+          const b = badge(source, data!.mls, data!.realty.configured);
           return (
             <div key={source.slug} className="rounded-md border border-neutral-800 bg-neutral-900/70 p-2.5">
               <div className="flex items-center justify-between gap-2">
@@ -151,6 +161,9 @@ export const DataSourcesPanel: React.FC<Props> = ({ refreshKey, onOpenListings }
                   </div>
                   <div className="mt-1 text-[10px] text-neutral-400 leading-relaxed">{info.detail}</div>
                 </>
+              )}
+              {source.slug === 'realtor' && source.recordCount > 0 && (
+                <div className="mt-1 text-[10px] text-neutral-500">{source.recordCount.toLocaleString()} listings cached in Supabase</div>
               )}
               {source.lastError && <div className="mt-1 text-[10px] text-rose-300 break-words">Last error: {source.lastError}</div>}
               {source.lastSyncAt && (
@@ -171,6 +184,11 @@ export const DataSourcesPanel: React.FC<Props> = ({ refreshKey, onOpenListings }
               {source.slug === 'rpr' && (
                 <a href="https://www.narrpr.com" target="_blank" rel="noreferrer" className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-cyan-300 hover:underline">
                   Open RPR <ExternalLink className="w-3 h-3" />
+                </a>
+              )}
+              {source.slug === 'realtor' && (
+                <a href="https://realtyapi.io" target="_blank" rel="noreferrer" className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-cyan-300 hover:underline">
+                  Get a RealtyAPI key <ExternalLink className="w-3 h-3" />
                 </a>
               )}
               {source.slug === 'mls' && (

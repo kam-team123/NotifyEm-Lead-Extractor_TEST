@@ -2,9 +2,10 @@ import type { DataSourceStatus, SourcesResponse } from '../src/types/index.js';
 import { handler, json } from './_lib/http.js';
 import { getSupabase, isSupabaseConfigured } from './_lib/supabase.js';
 import { readMlsConfig } from './_lib/reso.js';
+import { realtyConfigured } from './_lib/realty.js';
 // GET /api/sources — status of every supported data source (+ server config flags)
 
-const CORE_SLUGS = ['osm', 'overture', 'kaggle', 'rpr', 'mls'];
+const CORE_SLUGS = ['osm', 'realtor', 'overture', 'kaggle', 'rpr', 'mls'];
 
 interface SourceRow {
   id: string;
@@ -46,6 +47,9 @@ export const GET = handler(async () => {
   const mls = readMlsConfig();
   const response: SourcesResponse = {
     supabaseConfigured: isSupabaseConfigured(),
+    realty: {
+      configured: realtyConfigured()
+    },
     mls: {
       configured: Boolean(mls),
       name: mls?.name ?? '',
@@ -60,6 +64,7 @@ export const GET = handler(async () => {
     // Still list sources that can operate without Supabase.
     const names: Record<string, string> = {
       osm: 'OpenStreetMap',
+      realtor: 'Realtor.com (via RealtyAPI)',
       overture: 'Overture Maps Foundation',
       kaggle: 'Kaggle Real Estate Datasets',
       rpr: 'Realtors Property Resource (RPR)',
@@ -69,12 +74,12 @@ export const GET = handler(async () => {
       slug,
       name: names[slug],
       sourceType: slug,
-      provider: '',
-      accessType: 'public',
-      cost: 'free',
-      apiUrl: null,
-      isConnected: slug === 'osm',
-      isLive: slug === 'osm',
+      provider: slug === 'realtor' ? 'RealtyAPI' : '',
+      accessType: slug === 'realtor' ? 'licensed' : 'public',
+      cost: slug === 'realtor' ? 'paid credits' : 'free',
+      apiUrl: slug === 'realtor' ? 'https://realtor.realtyapi.io' : null,
+      isConnected: slug === 'osm' || (slug === 'realtor' && response.realty.configured),
+      isLive: slug === 'osm' || slug === 'realtor',
       lastSyncAt: null,
       lastError: null,
       recordCount: 0,
@@ -103,6 +108,23 @@ export const GET = handler(async () => {
     })
   );
   const statuses = rows.map((row, i) => toStatus(row, counts[i]));
+  if (!statuses.some(source => source.slug === 'realtor')) {
+    statuses.push({
+      slug: 'realtor',
+      name: 'Realtor.com (via RealtyAPI)',
+      sourceType: 'other',
+      provider: 'RealtyAPI',
+      accessType: 'licensed',
+      cost: 'paid credits',
+      apiUrl: 'https://realtor.realtyapi.io',
+      isConnected: response.realty.configured,
+      isLive: true,
+      lastSyncAt: null,
+      lastError: null,
+      recordCount: 0,
+      metadata: {}
+    });
+  }
 
   response.sources = CORE_SLUGS.map(slug => statuses.find(s => s.slug === slug)).filter(Boolean) as DataSourceStatus[];
   if (!response.sources.length) {
