@@ -1,3 +1,4 @@
+/// <reference path="./env.d.ts" />
 // Shared helpers for the Vercel functions in /api (Web Request -> Response handlers).
 
 export const USER_AGENT =
