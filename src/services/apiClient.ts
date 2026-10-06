@@ -1,4 +1,10 @@
-// Thin client for the Vercel functions in /api.
+// Thin client for the Vercel functions in /api. The session lives in HttpOnly cookies that the browser
+// sends automatically; this code never sees or stores a token.
+
+export const AUTH_EVENTS = {
+  signedOut: 'notifyem:signed-out',
+  passwordChangeRequired: 'notifyem:password-change-required'
+} as const;
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -48,7 +54,12 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}, timeoutM
         : `Unexpected server response (HTTP ${response.status}).`
     );
   }
-  if (!response.ok) throw new ApiError(response.status, errorMessage(body?.error, response.status));
+  if (!response.ok) {
+    // Session ended or a temporary password must be changed: let the AuthGate switch screens.
+    if (response.status === 401 && !path.startsWith('/api/auth')) window.dispatchEvent(new Event(AUTH_EVENTS.signedOut));
+    if (response.status === 403 && body?.error === 'PASSWORD_CHANGE_REQUIRED') window.dispatchEvent(new Event(AUTH_EVENTS.passwordChangeRequired));
+    throw new ApiError(response.status, errorMessage(body?.error, response.status));
+  }
   return body as T;
 }
 

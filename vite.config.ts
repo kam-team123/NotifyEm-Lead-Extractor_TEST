@@ -38,14 +38,20 @@ function vercelApiDev(): Plugin {
             if (value === undefined || ['connection', 'content-length', 'transfer-encoding', 'host'].includes(key)) continue;
             headers.set(key, Array.isArray(value) ? value.join(', ') : value);
           }
-          const request = new Request(`http://localhost${req.url}`, {
+          // Keep the real host:port so the API's same-origin (CSRF) check matches the browser's Origin.
+          const request = new Request(`http://${req.headers.host || 'localhost'}${req.url}`, {
             method,
             headers,
             body: ['GET', 'HEAD'].includes(method) ? undefined : Buffer.concat(chunks)
           });
           const response: Response = await fn(request);
           res.statusCode = response.status;
-          response.headers.forEach((value, key) => res.setHeader(key, value));
+          response.headers.forEach((value, key) => {
+            if (key !== 'set-cookie') res.setHeader(key, value);
+          });
+          // Session sign-in sets two cookies; setHeader per value would keep only the last one.
+          const setCookies = response.headers.getSetCookie();
+          if (setCookies.length) res.setHeader('set-cookie', setCookies);
           res.end(Buffer.from(await response.arrayBuffer()));
         } catch (error) {
           server.config.logger.error(String(error instanceof Error ? error.stack : error));

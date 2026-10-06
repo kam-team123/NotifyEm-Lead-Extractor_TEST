@@ -266,3 +266,22 @@ export interface SourcesResponse {
   };
   sources: DataSourceStatus[];
 }
+
+// --- Accounts & sign-in -------------------------------------------------------------
+
+export type UserRole = 'admin' | 'user';
+
+/** The signed-in user as the browser sees it (never includes tokens or passwords). */
+export interface SessionUser {
+  id: string;
+  publicUid: string;
+  username: string;
+  role: UserRole;
+  fullName: string;
+  email: string;
+  mustChangePassword: boolean;
+}
+
+export interface SessionResponse {
+  user: SessionUser;
+}

@@ -1,7 +1,7 @@
 import React from 'react';
-import { RefreshCw, Database } from 'lucide-react';
+import { RefreshCw, Database, LogOut, UserCircle } from 'lucide-react';
 import logo from '../../assets/images/notifyem-logo.png';
-import { SalesforceConfig } from '../../types';
+import { SalesforceConfig, SessionUser } from '../../types';
 
 interface TopBarProps {
   activeTab: 'map' | 'daily' | 'pipeline' | 'campaigns' | 'salesforce' | 'collections';
@@ -10,6 +10,8 @@ interface TopBarProps {
   onQuickSync: () => void;
   isSyncing: boolean;
   pendingReviewCount: number;
+  currentUser: SessionUser;
+  onSignOut: () => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -18,7 +20,9 @@ export const TopBar: React.FC<TopBarProps> = ({
   salesforceConfig,
   onQuickSync,
   isSyncing,
-  pendingReviewCount
+  pendingReviewCount,
+  currentUser,
+  onSignOut
 }) => {
   return (
     <header className="flex items-center justify-between px-6 py-3.5 bg-neutral-950 border-b border-neutral-800 shrink-0">
@@ -110,6 +114,25 @@ export const TopBar: React.FC<TopBarProps> = ({
         <div className="hidden xl:flex items-center gap-2 pl-3 border-l border-neutral-800 text-xs text-neutral-400">
           <Database className="w-3.5 h-3.5 text-cyan-400" />
           <span>OSM lookup</span>
+        </div>
+
+        <div className="flex items-center gap-2 pl-3 border-l border-neutral-800 text-xs">
+          <UserCircle className="w-4 h-4 text-neutral-400" />
+          <span className="text-neutral-200 font-medium" title={`UID ${currentUser.publicUid}`}>
+            {currentUser.username}
+          </span>
+          {currentUser.role === 'admin' && (
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-cyan-950 text-cyan-300 border border-cyan-500/30">Admin</span>
+          )}
+          <button
+            type="button"
+            onClick={onSignOut}
+            className="ml-1 flex items-center gap-1 px-2 py-1 rounded text-neutral-400 hover:text-white hover:bg-neutral-800 cursor-pointer"
+            title="Sign out"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span className="hidden lg:inline">Sign out</span>
+          </button>
         </div>
       </div>
     </header>

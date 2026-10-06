@@ -27,9 +27,15 @@ import {
   INITIAL_CAMPAIGNS
 } from './data/referenceData';
 import { apiGet, apiSend, newId } from './services/apiClient';
+import type { SessionUser } from './types';
 
 
-export default function App() {
+interface AppProps {
+  currentUser: SessionUser;
+  onSignOut: () => void;
+}
+
+export default function App({ currentUser, onSignOut }: AppProps) {
   const [activeTab, setActiveTab] = useState<'map' | 'daily' | 'pipeline' | 'campaigns' | 'salesforce' | 'collections'>('map');
   // Set by "View in Pipeline" on a collection card; the pipeline opens filtered to it.
   const [pipelineCollectionFilter, setPipelineCollectionFilter] = useState('ALL');
@@ -325,6 +331,8 @@ export default function App() {
         onQuickSync={handleQuickSalesforceSync}
         isSyncing={isSyncing}
         pendingReviewCount={pendingReviewCount}
+        currentUser={currentUser}
+        onSignOut={onSignOut}
       />
 
       {/* Floating System Notice Banner */}

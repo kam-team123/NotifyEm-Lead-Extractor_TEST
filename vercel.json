@@ -8,5 +8,19 @@
   },
   "crons": [
     { "path": "/api/mls/sync", "schedule": "0 11 * * *" }
+  ],
+  "rewrites": [
+    { "source": "/accept-invite", "destination": "/index.html" },
+    { "source": "/reset-password", "destination": "/index.html" }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
+      ]
+    }
   ]
 }

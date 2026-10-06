@@ -24,6 +24,45 @@ export function getSupabase(): SupabaseClient | null {
   return client;
 }
 
+/** The public anon key: safe to hold server-side, grants nothing without a user JWT (RLS). */
+function anonKey(): string | undefined {
+  return process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_PUBLISHABLE_KEY;
+}
+
+export function isAuthConfigured(): boolean {
+  return Boolean(supabaseUrl() && serviceKey() && anonKey());
+}
+
+function requireAuthConfig(): { url: string; key: string } {
+  const url = supabaseUrl();
+  const key = anonKey();
+  if (!url || !key || !serviceKey()) {
+    throw new HttpError(
+      503,
+      'Sign-in is not configured on the server. Set SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY and SUPABASE_ANON_KEY in the Vercel environment variables.'
+    );
+  }
+  return { url, key };
+}
+
+/** Client for Supabase Auth calls made on a user's behalf (sign-in, refresh, token checks). Never holds a session. */
+export function authClient(): SupabaseClient {
+  const { url, key } = requireAuthConfig();
+  return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
+}
+
+/**
+ * Database client that acts AS the signed-in user: every query runs under row-level security, so a user
+ * can only touch rows the policies in 0008_auth_foundation.sql allow. Use this for all user-owned data.
+ */
+export function userClient(accessToken: string): SupabaseClient {
+  const { url, key } = requireAuthConfig();
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    global: { headers: { Authorization: `Bearer ${accessToken}` } }
+  });
+}
+
 export function requireSupabase(): SupabaseClient {
   const sb = getSupabase();
   if (!sb) {
