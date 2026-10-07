@@ -1,5 +1,10 @@
 # NotifyEm sign-in setup
 
+> **Notice:** The application currently opens without sign-in. The authentication setup below describes
+> dormant sign-in endpoints and is not an access control for the deployed app. Server API routes use a
+> Supabase service-role key; anyone who can reach the app may be able to access or modify its data.
+> Do not deploy publicly with private or sensitive data.
+
 Status: **Phases 2–3 of 6.** Sign-in, sign-out, forced password change, password reset, invitations
 (server side) and the admin bootstrap exist.
 **Still open:** the data routes (`/api/leads`, `/api/map-search`, …) are **not yet protected** and are

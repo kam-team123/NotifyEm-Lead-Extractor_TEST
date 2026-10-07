@@ -22,6 +22,10 @@ The browser never calls Overpass or Supabase directly. Overpass rejects anonymou
 
 ## Deploy (Vercel + Supabase)
 
+> **Public access:** The app opens without a sign-in screen. Its server API uses Supabase's service-role
+> key, so anyone who can reach the deployed site may be able to read or change application data. Do not
+> deploy this configuration with private or sensitive data.
+
 1. **Database:** in the Supabase SQL editor run `supabase/0003_app_api.sql`. It is safe whether you ran 0001, 0002 or both,
    and safe to re-run. It adds the columns and keys the API needs and turns on Row Level Security (the API uses the service-role key).
 2. **Environment variables:** in Vercel → Project → Settings → Environment Variables, add the keys from `.env.example`.
